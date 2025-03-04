@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    net::{Ipv4Addr, SocketAddrV4},
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
     time::Duration,
 };
 
@@ -13,26 +13,7 @@ use tokio::time::sleep;
 
 #[tokio::main]
 async fn main() -> () {
-    //let mut set = JoinSet::new();
-
     let mut tasks = HashMap::new();
-
-    for i in 0..4 {
-        let port = 50000 + i;
-        tasks.insert(
-            port,
-            tokio::spawn(async move {
-                let address = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), port);
-                tonic::transport::Server::builder()
-                    .add_service(HealthServer::new(HealthImpl {
-                        port: address.port(),
-                    }))
-                    .add_service(EchoServer::new(EchoImpl {}))
-                    .serve(address.into())
-                    .await
-            }),
-        );
-    }
 
     let mut input = String::new();
     while std::io::stdin().read_line(&mut input).is_ok() {
@@ -40,53 +21,105 @@ async fn main() -> () {
             break;
         }
 
-        if input.starts_with("start") {
+        if input.starts_with("start v4") {
             let parts: Vec<&str> = input.split_whitespace().collect();
-            if parts.len() != 2 {
+            if parts.len() != 3 {
                 println!("Invalid command");
                 input.clear();
                 continue;
             }
 
-            let port = parts[1].parse::<u16>().unwrap();
+            let port = parts[2].parse::<u16>().unwrap();
             if tasks.get(&port).is_some() {
                 println!("Task on port {} already started", port);
             } else {
+                let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+                let server = tokio::spawn(async move {
+                    let address = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), port).into();
+                    tonic::transport::Server::builder()
+                        .add_service(HealthServer::new(HealthImpl {
+                            address,
+                        }))
+                        .add_service(EchoServer::new(EchoImpl {}))
+                        .serve_with_shutdown(address, async {
+                            rx.await.ok();
+                        })
+                        .await
+                });
                 tasks.insert(
-                    port,
-                    tokio::spawn(async move {
-                        let address = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), port);
-                        tonic::transport::Server::builder()
-                            .add_service(HealthServer::new(HealthImpl {
-                                port: address.port(),
-                            }))
-                            .add_service(EchoServer::new(EchoImpl {}))
-                            .serve(address.into())
-                            .await
-                    }),
+                    port + 4000,
+                    (server, tx),
                 );
                 println!("Task on port {} started", port);
             }
         }
 
-        if input.starts_with("stop") {
+        if input.starts_with("start v6") {
             let parts: Vec<&str> = input.split_whitespace().collect();
-            if parts.len() != 2 {
+            if parts.len() != 3 {
                 println!("Invalid command");
                 input.clear();
                 continue;
             }
 
-            let port = parts[1].parse::<u16>().unwrap();
-            if let Some(task) = tasks.get(&port) {
-                task.abort();
+            let port = parts[2].parse::<u16>().unwrap();
+            if tasks.get(&port).is_some() {
+                println!("Task on port {} already started", port);
+            } else {
+                let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+                let server = tokio::spawn(async move {
+                    let address = SocketAddrV6::new(Ipv6Addr::LOCALHOST, port, 0, 0).into();
+                    tonic::transport::Server::builder()
+                        .add_service(HealthServer::new(HealthImpl {
+                            address,
+                        }))
+                        .add_service(EchoServer::new(EchoImpl {}))
+                        .serve_with_shutdown(address, async {
+                            rx.await.ok();
+                        })
+                        .await
+                });
+                tasks.insert(
+                    port + 6000,
+                    (server, tx),
+                );
+                println!("Task on port {} started", port);
+            }
+        }
+
+        if input.starts_with("stop v4") {
+            let parts: Vec<&str> = input.split_whitespace().collect();
+            if parts.len() != 3 {
+                println!("Invalid command");
+                input.clear();
+                continue;
+            }
+
+            let port = parts[2].parse::<u16>().unwrap();
+            if let Some(task) = tasks.remove(&(port + 4000)) {
+                let _ = task.1.send(());
+                println!("Task on port {} stopped", port);
+            }
+        }
+
+        if input.starts_with("stop v6") {
+            let parts: Vec<&str> = input.split_whitespace().collect();
+            if parts.len() != 3 {
+                println!("Invalid command");
+                input.clear();
+                continue;
+            }
+
+            let port = parts[2].parse::<u16>().unwrap();
+            if let Some(task) = tasks.remove(&(port + 6000)) {
+                let _ = task.1.send(());
                 println!("Task on port {} stopped", port);
             }
         }
 
         if input.starts_with("list") {
             for (port, task) in tasks.iter() {
-                println!("Task on port {} is running: {}", port, !task.is_finished());
+                println!("Task on port {} is running: {}", port, !task.0.is_finished());
             }
         }
 
@@ -95,7 +128,7 @@ async fn main() -> () {
 }
 
 struct HealthImpl {
-    pub port: u16,
+    pub address: SocketAddr,
 }
 
 #[tonic::async_trait]
@@ -106,7 +139,7 @@ impl Health for HealthImpl {
     ) -> Result<tonic::Response<example_protobuf::IsAliveResponse>, tonic::Status> {
         sleep(Duration::from_millis(random_range(200..1000))).await;
         Ok(tonic::Response::new(example_protobuf::IsAliveResponse {
-            message: format!("I'm alive! (from port: {})", self.port),
+            message: format!("I'm alive! (from: {:?})", self.address),
         }))
     }
 }
