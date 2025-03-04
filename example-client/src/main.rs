@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use example_protobuf::{EndpointTemplate, RequestGenerator, WrappedHealthClient};
 use tokio::{task::JoinSet, time::interval};
-use tracing::info;
+use tracing::{debug, info};
 use url::Url;
 
 #[tokio::main]
@@ -10,7 +10,7 @@ async fn main() {
     let mut set = JoinSet::new();
     colog::init();
 
-    let template = EndpointTemplate::new(Url::parse("http://localhost:50000").unwrap()).unwrap();
+    let template = EndpointTemplate::new(Url::parse("http://localhost:50001").unwrap()).unwrap();
     let client = WrappedHealthClient::new(template);
 
     for _ in 0..4 {
@@ -20,7 +20,7 @@ async fn main() {
             let request = RequestGenerator::new(());
             loop {
                 interval.tick().await;
-                let response = client.is_alive(request.clone()).await.unwrap().into_inner();
+                let response = client.is_alive(request.clone()).await;
                 info!("Response: {:?}", response);
             }
         });

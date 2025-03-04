@@ -4,11 +4,10 @@ use std::{
 
 use tokio::{task::JoinHandle, time::interval};
 use tonic::{
-    metadata::MetadataMap,
     transport::{Channel, Endpoint},
-    Extensions, IntoRequest,
+    IntoRequest,
 };
-use tracing::{debug, trace, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     endpoint_template::EndpointTemplate,
@@ -29,7 +28,7 @@ pub struct WrappedHealthClient {
 }
 
 impl WrappedHealthClient {
-    pub fn new(_endpoint: EndpointTemplate) -> Self {
+    pub fn new(endpoint: EndpointTemplate) -> Self {
         let ready_clients = Arc::new(std::sync::Mutex::new(VecDeque::new()));
         let ready_clients_condvar = Arc::new(std::sync::Condvar::new());
 
@@ -48,16 +47,18 @@ impl WrappedHealthClient {
                 loop {
                     interval.tick().await;
 
-                    // let addresses = (endpoint.domain(), 0)
-                    //     .to_socket_addrs()
-                    //     .unwrap()
-                    //     .map(|addr| addr.ip());
+                    let addresses = (endpoint.domain(), 0)
+                        .to_socket_addrs()
+                        .unwrap()
+                        .map(|addr| addr.ip());
 
                     let mut ready = VecDeque::new();
                     let mut broken = BinaryHeap::new();
 
-                    for port in 50000..50005 {
-                        let endpoint  = Endpoint::new(format!("http://localhost:{}", port)).unwrap();
+
+                    for address in addresses {
+                        debug!("Connecting to: {:?}", address);
+                        let endpoint = endpoint.build(address);
                         let client = HealthClient::connect(endpoint.clone()).await;
                         match client {
                             Ok(client) => {
@@ -71,22 +72,6 @@ impl WrappedHealthClient {
                             }
                         }
                     }
-
-                    // for address in addresses {
-                    //     let endpoint = endpoint.build(address);
-                    //     let client = HealthClient::connect(endpoint.clone()).await;
-                    //     match client {
-                    //         Ok(client) => {
-                    //             ready.push_back((endpoint, client));
-                    //         }
-                    //         Err(_e) => {
-                    //             broken.push(InstantEndpoint(
-                    //                 Instant::now() + Duration::from_secs(1),
-                    //                 endpoint,
-                    //             ));
-                    //         }
-                    //     }
-                    // }
 
                     // todo: Wrap this nicely.
                     match ready_clients.lock() {
@@ -155,7 +140,7 @@ impl WrappedHealthClient {
                         Ok(mut client) => {
                             match client.is_alive(().into_request()).await {
                                 Ok(_) => {
-                                    debug!("Health check passed for {:?}", endpoint);
+                                    info!("Health check passed for {:?}", endpoint);
                                     ready_clients
                                         .lock()
                                         .unwrap()
@@ -297,12 +282,12 @@ impl WrappedHealthClient {
                 .pop_front()
                 .unwrap();
 
-            trace!("Sending request to {:?}", endpoint);
+            info!("Sending request to {:?}", endpoint);
             let result = client.is_alive(request).await;
 
             match result {
                 Ok(response) => {
-                    trace!("Received response from {:?}", endpoint);
+                    info!("Received response from {:?}, {:?}", endpoint, response);
                     self.ready_clients
                         .lock()
                         .unwrap()
@@ -326,17 +311,6 @@ impl WrappedHealthClient {
         }
     }
 }
-
-// struct BalancedGrpcService {
-//     discover: EndpointToChannelStream<IpAddr>,
-//     live_services:
-//         tower::ready_cache::ReadyCache<IpAddr, Channel, http::Request<tonic::body::BoxBody>>,
-//     ready_index: Option<usize>,
-//     rng: rand::rngs::SmallRng,
-
-//     #[allow(dead_code)]
-//     dead_addresses: std::collections::BinaryHeap<(std::cmp::Reverse<std::time::Instant>, IpAddr)>,
-// }
 
 #[derive(Debug)]
 enum WrappedError {
@@ -381,153 +355,3 @@ impl std::error::Error for WrappedError {
         }
     }
 }
-
-// impl BalancedGrpcService {
-//     /// Polls `discover` for updates, adding new items to `not_ready`.
-//     ///
-//     /// Removals may alter the order of either `ready` or `not_ready`.
-//     fn update_pending_from_discover(
-//         &mut self,
-//         cx: &mut Context<'_>,
-//     ) -> Poll<Option<Result<(), WrappedError>>> {
-//         debug!("updating from discover");
-//         loop {
-//             match ready!(Pin::new(&mut self.discover).poll_discover(cx))
-//                 .transpose()
-//                 .map_err(|e| WrappedError::Discover(e.into()))?
-//             {
-//                 None => return Poll::Ready(None),
-//                 Some(Change::Remove(key)) => {
-//                     trace!("remove");
-//                     self.live_services.evict(&key);
-//                 }
-//                 Some(Change::Insert(key, svc)) => {
-//                     trace!("insert");
-//                     // If this service already existed in the set, it will be
-//                     // replaced as the new one becomes ready.
-//                     self.live_services.push(key, svc);
-//                 }
-//             }
-//         }
-//     }
-
-//     fn promote_pending_to_ready(&mut self, cx: &mut Context<'_>) {
-//         loop {
-//             match self.live_services.poll_pending(cx) {
-//                 Poll::Ready(Ok(())) => {
-//                     // There are no remaining pending services.
-//                     debug_assert_eq!(self.live_services.pending_len(), 0);
-//                     break;
-//                 }
-//                 Poll::Pending => {
-//                     // None of the pending services are ready.
-//                     debug_assert!(self.live_services.pending_len() > 0);
-//                     break;
-//                 }
-//                 Poll::Ready(Err(error)) => {
-//                     // An individual service was lost; continue processing
-//                     // pending services.
-//                     debug!(%error, "dropping failed endpoint");
-//                 }
-//             }
-//         }
-//         trace!(
-//             ready = %self.live_services.ready_len(),
-//             pending = %self.live_services.pending_len(),
-//             "poll_unready"
-//         );
-//     }
-
-//     /// Performs P2C on inner services to find a suitable endpoint.
-//     fn ready_index(&mut self) -> Option<usize> {
-//         match self.live_services.ready_len() {
-//             0 => None,
-//             1 => Some(0),
-//             len => Some((0..len).sample_single(&mut self.rng)),
-//         }
-//     }
-
-//     #[allow(dead_code)]
-//     fn mark_failed(&self, _key: IpAddr) {}
-// }
-
-// impl tower_service::Service<http::Request<tonic::body::BoxBody>> for BalancedGrpcService {
-//     type Response = http::Response<hyper::body::Body>;
-//     type Error = WrappedError;
-//     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
-//     // Box<Pin<
-//     //     <Channel as tower_service::Service<http::Request<tonic::body::BoxBody>>>::Future,
-//     // >>;
-
-//     // From tonic v0.11.0: src/balance/p2c/service.rs
-//     fn poll_ready(
-//         &mut self,
-//         cx: &mut std::task::Context<'_>,
-//     ) -> std::task::Poll<Result<(), Self::Error>> {
-//         // `ready_index` may have already been set by a prior invocation. These
-//         // updates cannot disturb the order of existing ready services.
-//         let _ = self.update_pending_from_discover(cx)?;
-//         self.promote_pending_to_ready(cx);
-
-//         loop {
-//             // If a service has already been selected, ensure that it is ready.
-//             // This ensures that the underlying service is ready immediately
-//             // before a request is dispatched to it (i.e. in the same task
-//             // invocation). If, e.g., a failure detector has changed the state
-//             // of the service, it may be evicted from the ready set so that
-//             // another service can be selected.
-//             if let Some(index) = self.ready_index.take() {
-//                 match self.live_services.check_ready_index(cx, index) {
-//                     Ok(true) => {
-//                         // The service remains ready.
-//                         self.ready_index = Some(index);
-//                         return Poll::Ready(Ok(()));
-//                     }
-//                     Ok(false) => {
-//                         // The service is no longer ready. Try to find a new one.
-//                         trace!("ready service became unavailable");
-//                     }
-//                     Err(Failed(_, error)) => {
-//                         // The ready endpoint failed, so log the error and try
-//                         // to find a new one.
-//                         debug!(%error, "endpoint failed");
-//                     }
-//                 }
-//             }
-
-//             // Select a new service by comparing two at random and using the
-//             // lesser-loaded service.
-//             self.ready_index = self.ready_index();
-//             if self.ready_index.is_none() {
-//                 debug_assert_eq!(self.live_services.ready_len(), 0);
-//                 // We have previously registered interest in updates from
-//                 // discover and pending services.
-//                 return Poll::Pending;
-//             }
-//         }
-//     }
-
-//     fn call(&mut self, request: http::Request<tonic::body::BoxBody>) -> Self::Future {
-//         let index = self.ready_index.take().expect("called before ready");
-//         let _key = self
-//             .live_services
-//             .get_ready_index(index)
-//             .expect("index out of bounds")
-//             .0
-//             .clone();
-
-//         let fut = self.live_services.call_ready_index(index, request);
-
-//         Box::pin(async move {
-//             let result = fut.await;
-//             match result {
-//                 Ok(response) => Ok(response),
-//                 Err(error) => {
-//                     // todo: Mark the ip for eviction.
-//                     // How the hell do I do that without global variables?
-//                     Err(WrappedError::Transport(error))
-//                 }
-//             }
-//         })
-//     }
-// }
