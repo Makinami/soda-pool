@@ -37,19 +37,14 @@ async fn main() -> () {
                 let server = tokio::spawn(async move {
                     let address = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), port).into();
                     tonic::transport::Server::builder()
-                        .add_service(HealthServer::new(HealthImpl {
-                            address,
-                        }))
+                        .add_service(HealthServer::new(HealthImpl { address }))
                         .add_service(EchoServer::new(EchoImpl {}))
                         .serve_with_shutdown(address, async {
                             rx.await.ok();
                         })
                         .await
                 });
-                tasks.insert(
-                    port + 4000,
-                    (server, tx),
-                );
+                tasks.insert(port + 4000, (server, tx));
                 println!("Task on port {} started", port);
             }
         }
@@ -70,19 +65,14 @@ async fn main() -> () {
                 let server = tokio::spawn(async move {
                     let address = SocketAddrV6::new(Ipv6Addr::LOCALHOST, port, 0, 0).into();
                     tonic::transport::Server::builder()
-                        .add_service(HealthServer::new(HealthImpl {
-                            address,
-                        }))
+                        .add_service(HealthServer::new(HealthImpl { address }))
                         .add_service(EchoServer::new(EchoImpl {}))
                         .serve_with_shutdown(address, async {
                             rx.await.ok();
                         })
                         .await
                 });
-                tasks.insert(
-                    port + 6000,
-                    (server, tx),
-                );
+                tasks.insert(port + 6000, (server, tx));
                 println!("Task on port {} started", port);
             }
         }
@@ -119,7 +109,11 @@ async fn main() -> () {
 
         if input.starts_with("list") {
             for (port, task) in tasks.iter() {
-                println!("Task on port {} is running: {}", port, !task.0.is_finished());
+                println!(
+                    "Task on port {} is running: {}",
+                    port,
+                    !task.0.is_finished()
+                );
             }
         }
 

@@ -3,7 +3,7 @@ use std::{net::IpAddr, str::FromStr, time::Duration};
 use tonic::transport::{Endpoint, Uri};
 use url::{Host, Url};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EndpointTemplate {
     url: Url,
     origin: Option<Uri>,

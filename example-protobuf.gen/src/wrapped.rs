@@ -1,49 +1,43 @@
 use std::{
-    collections::{BinaryHeap, VecDeque}, mem::replace, sync::Arc, time::{Duration, Instant}
+    collections::{BinaryHeap, VecDeque},
+    mem::replace,
+    net::IpAddr,
+    sync::Arc,
+    time::{Duration, Instant},
 };
 
-use tokio::{task::JoinHandle, time::interval};
-use tonic::{
-    transport::{Channel, Endpoint},
-    IntoRequest,
-};
-use tracing::{debug, info, warn};
+use rand::Rng;
+use tokio::{sync::RwLock, task::JoinHandle, time::interval};
+use tonic::{transport::Channel, IntoRequest, Status};
+use tracing::{debug, error, info, warn};
 
 use crate::{
-    endpoint_template::EndpointTemplate,
-    health::health_client::HealthClient, request_generator::GeneratesRequest,
-    dns::ToSocketAddrs,
+    broken_endpoints::BrokenEndpoints, dns::ToSocketAddrs, endpoint_template::EndpointTemplate, health::health_client::HealthClient, request_generator::GeneratesRequest
 };
+
 
 #[derive(Clone)]
 pub struct WrappedHealthClient {
-    pub ready_clients: Arc<std::sync::Mutex<VecDeque<(Endpoint, HealthClient<Channel>)>>>,
-    pub ready_clients_condvar: Arc<std::sync::Condvar>,
+    ready_clients: Arc<RwLock<VecDeque<(IpAddr, Channel)>>>,
+    broken_endpoints: Arc<BrokenEndpoints>,
 
-    pub broken_endpoints: Arc<std::sync::Mutex<BinaryHeap<InstantEndpoint>>>,
-    pub broken_endpoints_condvar: Arc<std::sync::Condvar>,
-
-    pub dns_lookup_task: Arc<JoinHandle<()>>,
-    pub doctor_task: Arc<JoinHandle<()>>,
+    _dns_lookup_task: Arc<JoinHandle<()>>,
+    _doctor_task: Arc<JoinHandle<()>>,
 }
 
 impl WrappedHealthClient {
-    pub fn new(endpoint: EndpointTemplate) -> Self {
-        let ready_clients = Arc::new(std::sync::Mutex::new(VecDeque::new()));
-        let ready_clients_condvar = Arc::new(std::sync::Condvar::new());
-
-        let broken_endpoints = Arc::new(std::sync::Mutex::new(BinaryHeap::new()));
-        let broken_endpoints_condvar = Arc::new(std::sync::Condvar::new());
+    pub fn new(endpoint: EndpointTemplate, dns_interval: Duration) -> Self {
+        let ready_clients = Arc::new(RwLock::new(VecDeque::new()));
+        let broken_endpoints = Arc::new(BrokenEndpoints::default());
 
         let dns_lookup_task = {
+            // Get shared ownership of the resources.
             let ready_clients = ready_clients.clone();
-            let ready_clients_condvar = ready_clients_condvar.clone();
-
             let broken_endpoints = broken_endpoints.clone();
-            let broken_endpoints_condvar = broken_endpoints_condvar.clone();
+            let endpoint = endpoint.clone();
 
             tokio::spawn(async move {
-                let mut interval = interval(Duration::from_secs(1));
+                let mut interval = interval(dns_interval);
                 loop {
                     interval.tick().await;
 
@@ -56,122 +50,57 @@ impl WrappedHealthClient {
                     let mut broken = BinaryHeap::new();
 
                     // todo: Look at the current endpoints to skip testing them again.
+                    // Note: Changing implementation from Mutex to RwLock made it much nicer,
+                    // but I still wonder about the performance implications of resting all endpoints each time we refresh DNS.
                     for address in addresses {
                         debug!("Connecting to: {:?}", address);
                         let endpoint = endpoint.build(address);
-                        let client = HealthClient::connect(endpoint.clone()).await;
-                        match client {
-                            Ok(client) => {
-                                ready.push_back((endpoint, client));
-                            }
-                            Err(_e) => {
-                                broken.push(InstantEndpoint(
-                                    Instant::now() + Duration::from_secs(1),
-                                    endpoint,
-                                ));
-                            }
+                        let channel = endpoint.connect().await;
+                        if let Ok(channel) = channel {
+                            ready.push_back((address, channel));
+                        } else {
+                            broken.push((
+                                Instant::now() + Duration::from_secs(1),
+                                address,
+                            ));
                         }
                     }
 
                     // todo: Wrap this nicely.
-                    match ready_clients.lock() {
-                        Ok(mut guard) => {
-                            let healthy = !ready.is_empty();
-                            let _ = replace(&mut *guard, ready);
-                            if healthy {
-                                ready_clients_condvar.notify_one();
-                            }
-                        }
-                        Err(_) => todo!(),
-                    };
-                    match broken_endpoints.lock() {
-                        Ok(mut guard) => {
-                            let is_broken = !broken.is_empty();
-                            let _ = replace(&mut *guard, broken);
-                            if is_broken {
-                                broken_endpoints_condvar.notify_one();
-                            }
-                        }
-                        Err(_) => todo!(),
-                    };
+
+                    // Replace a list of clients stored in `ready_clients`` with the new constructed in `ready`.
+                    let _ = replace(&mut *ready_clients.write().await, ready);
+                    broken_endpoints.replace_with(broken);
                 }
             })
         };
 
         let doctor_task = {
+            // Get shared ownership of the resources.
             let ready_clients = ready_clients.clone();
-            let ready_clients_condvar = ready_clients_condvar.clone();
-
             let broken_endpoints = broken_endpoints.clone();
-            let broken_endpoints_condvar = broken_endpoints_condvar.clone();
 
             tokio::spawn(async move {
-                let mut wait_duration = Duration::MAX;
+                let wait_duration = Duration::MAX;
                 loop {
-                    let endpoint = {
-                        let mut result = broken_endpoints_condvar
-                            .wait_timeout_while(
-                                broken_endpoints.lock().unwrap(),
-                                wait_duration,
-                                |endpoints| endpoints.is_empty(),
-                            )
-                            .unwrap();
-
-                        #[allow(unused_variables)]
-                        match result.0.peek() {
-                            Some(InstantEndpoint(instant, _)) => {
-                                let now = Instant::now();
-                                if now < *instant {
-                                    wait_duration = *instant - now;
-                                    continue;
-                                } else {
-                                    result.0.pop().unwrap().1
-                                }
-                            }
-                            None => {
-                                wait_duration = Duration::MAX;
-                                continue;
-                            }
-                        }
+                    // todo: block_in_place is not the best solution here. It will prevent further tasks from being scheduled on the current thread,
+                    // but may block the ones scheduled. It's ok for now for testing but should be avoided in production.
+                    let Some(ip_address) = tokio::task::block_in_place(|| broken_endpoints.next_broken_ip_address(wait_duration))
+                    else {
+                        continue;
                     };
 
-                    let result = HealthClient::connect(endpoint.clone()).await;
-                    // todo: implement exponential backoff.
-                    match result {
-                        Ok(mut client) => {
-                            match client.is_alive(().into_request()).await {
-                                Ok(_) => {
-                                    info!("Health check passed for {:?}", endpoint);
-                                    ready_clients
-                                        .lock()
-                                        .unwrap()
-                                        .push_back((endpoint, client));
-                                    ready_clients_condvar.notify_one();
-                                },
-                                Err(_) => {
-                                    warn!("Failed health check for {:?}", endpoint);
-                                    broken_endpoints
-                                        .lock()
-                                        .unwrap()
-                                        .push(InstantEndpoint(
-                                            Instant::now() + Duration::from_secs(1),
-                                            endpoint,
-                                        ));
-                                    broken_endpoints_condvar.notify_one();},
-                            }
+                    let connection_test_result = endpoint.build(ip_address).connect().await;
 
-                        }
-                        Err(_e) => {
-                            warn!("Can't connect to {:?}", endpoint);
-                            broken_endpoints
-                                .lock()
-                                .unwrap()
-                                .push(InstantEndpoint(
-                                    Instant::now() + Duration::from_secs(1),
-                                    endpoint,
-                                ));
-                            broken_endpoints_condvar.notify_one();
-                        }
+                    if let Ok(channel) = connection_test_result
+                        && HealthClient::new(channel.clone()).is_alive(().into_request()).await.is_ok()
+                    {
+                        info!("Health check passed for {:?}", ip_address);
+                        ready_clients.write().await.push_back((ip_address, channel));
+                    } else {
+                        // todo: implement exponential backoff.
+                        warn!("Can't connect to {:?}", ip_address);
+                        broken_endpoints.add_address(ip_address);
                     }
                 }
             })
@@ -179,36 +108,10 @@ impl WrappedHealthClient {
 
         Self {
             ready_clients,
-            ready_clients_condvar,
             broken_endpoints,
-            broken_endpoints_condvar,
-            dns_lookup_task: Arc::new(dns_lookup_task),
-            doctor_task: Arc::new(doctor_task),
+            _dns_lookup_task: Arc::new(dns_lookup_task),
+            _doctor_task: Arc::new(doctor_task),
         }
-    }
-}
-
-pub struct InstantEndpoint(Instant, Endpoint);
-
-impl Eq for InstantEndpoint {}
-
-impl PartialEq for InstantEndpoint {
-    fn eq(&self, other: &Self) -> bool {
-        // todo: Double check this. Maybe not for binary heap, but I should
-        // probably compare also the endpoint.
-        PartialEq::eq(&self.0, &other.0)
-    }
-}
-
-impl PartialOrd for InstantEndpoint {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        PartialOrd::partial_cmp(&self.0, &other.0).map(|o| o.reverse())
-    }
-}
-
-impl Ord for InstantEndpoint {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        Ord::cmp(&self.0, &other.0)
     }
 }
 
@@ -216,46 +119,41 @@ impl WrappedHealthClient {
     pub async fn is_alive(
         &mut self,
         request_generator: impl GeneratesRequest<()>,
-    ) -> Result<tonic::Response<crate::health::IsAliveResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<crate::health::IsAliveResponse>, WrappedError> {
         loop {
             let request = request_generator.generate_request();
 
-            // todo: Try not to take an exclusive ownership over client.
-            let (endpoint, mut client) = self
-                .ready_clients_condvar
-                .wait_while(self.ready_clients.lock().unwrap(), |clients| {
-                    clients.is_empty()
-                })
-                .unwrap()
-                .pop_front()
-                .unwrap();
+            let read_access = self.ready_clients.read().await;
+            if read_access.is_empty() {
+                return Err(WrappedError::NoReadyChannels);
+            }
+            let index = rand::rng().random_range(0..read_access.len());
+            let (ip_address, channel) = read_access[index].clone();
+            let mut client = HealthClient::new(channel);
 
-            info!("Sending request to {:?}", endpoint);
+            info!("Sending request to {:?}", ip_address);
             let result = client.is_alive(request).await;
 
             match result {
                 Ok(response) => {
-                    info!("Received response from {:?}, {:?}", endpoint, response);
-                    self.ready_clients
-                        .lock()
-                        .unwrap()
-                        .push_back((endpoint, client));
-                    self.ready_clients_condvar.notify_one();
+                    info!("Received response from {:?}", ip_address);
                     return Ok(response);
                 }
                 Err(e) => {
                     // todo: Determine if the endpoint is dead.
                     // If it is, add it to broken endpoints and retry request to another server.
                     // If it isn't, just return an error response to the caller.
-                    warn!("Error from {:?}: {:?}", endpoint, e);
+                    warn!("Error from {:?}: {:?}", ip_address, e);
                     if true {
-                        self.broken_endpoints.lock().unwrap().push(InstantEndpoint(
-                            Instant::now() + Duration::from_secs(1),
-                            endpoint,
-                        ));
-                        self.broken_endpoints_condvar.notify_one();
+                        let mut write_access = self.ready_clients.write().await;
+                        let index = write_access.iter().position(|(e, _)| e == &ip_address);
+                        if let Some(index) = index {
+                            write_access.remove(index);
+                        }
+                        self.broken_endpoints.add_address(ip_address);
                     }
-                    return Err(e);
+                    error!("Return server error {:?} from {:?}", e, ip_address);
+                    return Err(e.into());
                 }
             }
         }
@@ -263,45 +161,51 @@ impl WrappedHealthClient {
 }
 
 #[derive(Debug)]
-enum WrappedError {
-    Transport(tonic::transport::Error),
-    Discover(Box<dyn std::error::Error + Send + Sync>),
-    Generic(Box<dyn std::error::Error + Send + Sync>),
-    #[allow(dead_code)]
-    Pool,
+pub enum WrappedError {
+    Status(tonic::Status),
+    //Transport(tonic::transport::Error),
+    //Discover(Box<dyn std::error::Error + Send + Sync>),
+    //Generic(Box<dyn std::error::Error + Send + Sync>),
+    NoReadyChannels,
 }
 
-impl From<tower::balance::error::Discover> for WrappedError {
-    fn from(e: tower::balance::error::Discover) -> Self {
-        WrappedError::Discover(e.into())
+impl From<Status> for WrappedError {
+    fn from(e: Status) -> Self {
+        WrappedError::Status(e)
     }
 }
 
-impl From<tonic::transport::Error> for WrappedError {
-    fn from(e: tonic::transport::Error) -> Self {
-        WrappedError::Transport(e)
-    }
-}
+// impl From<tower::balance::error::Discover> for WrappedError {
+//     fn from(e: tower::balance::error::Discover) -> Self {
+//         WrappedError::Discover(e.into())
+//     }
+// }
 
-impl From<Box<dyn std::error::Error + Send + Sync>> for WrappedError {
-    fn from(e: Box<dyn std::error::Error + Send + Sync>) -> Self {
-        WrappedError::Generic(e)
-    }
-}
+// impl From<tonic::transport::Error> for WrappedError {
+//     fn from(e: tonic::transport::Error) -> Self {
+//         WrappedError::Transport(e)
+//     }
+// }
 
-impl std::fmt::Display for WrappedError {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
-    }
-}
+// impl From<Box<dyn std::error::Error + Send + Sync>> for WrappedError {
+//     fn from(e: Box<dyn std::error::Error + Send + Sync>) -> Self {
+//         WrappedError::Generic(e)
+//     }
+// }
 
-impl std::error::Error for WrappedError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            WrappedError::Transport(e) => Some(e),
-            WrappedError::Discover(e) => e.source(),
-            WrappedError::Generic(e) => Some(&**e),
-            WrappedError::Pool => None,
-        }
-    }
-}
+// impl std::fmt::Display for WrappedError {
+//     fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         todo!()
+//     }
+// }
+
+// impl std::error::Error for WrappedError {
+//     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+//         match self {
+//             WrappedError::Transport(e) => Some(e),
+//             WrappedError::Discover(e) => e.source(),
+//             WrappedError::Generic(e) => Some(&**e),
+//             WrappedError::Pool => None,
+//         }
+//     }
+// }
