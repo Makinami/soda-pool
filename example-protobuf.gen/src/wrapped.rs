@@ -55,7 +55,7 @@ impl WrappedHealthClient {
                     let mut ready = VecDeque::new();
                     let mut broken = BinaryHeap::new();
 
-
+                    // todo: Look at the current endpoints to skip testing them again.
                     for address in addresses {
                         debug!("Connecting to: {:?}", address);
                         let endpoint = endpoint.build(address);
@@ -136,6 +136,7 @@ impl WrappedHealthClient {
                     };
 
                     let result = HealthClient::connect(endpoint.clone()).await;
+                    // todo: implement exponential backoff.
                     match result {
                         Ok(mut client) => {
                             match client.is_alive(().into_request()).await {
@@ -211,60 +212,6 @@ impl Ord for InstantEndpoint {
     }
 }
 
-#[allow(dead_code)]
-async fn wtf(wrapper: &mut WrappedHealthClient) {
-    let mut wait_duration = Duration::MAX;
-    loop {
-        let mut result = wrapper
-            .broken_endpoints_condvar
-            .wait_timeout_while(
-                wrapper.broken_endpoints.lock().unwrap(),
-                wait_duration,
-                |endpoints| endpoints.is_empty(),
-            )
-            .unwrap();
-
-        let endpoint = match result.0.peek() {
-            Some(InstantEndpoint(instant, _)) => {
-                let now = Instant::now();
-                if now < *instant {
-                    wait_duration = *instant - now;
-                    continue;
-                } else {
-                    result.0.pop().unwrap().1
-                }
-            }
-            None => {
-                wait_duration = Duration::MAX;
-                continue;
-            }
-        };
-
-        let result = HealthClient::connect(endpoint.clone()).await;
-        match result {
-            Ok(client) => {
-                wrapper
-                    .ready_clients
-                    .lock()
-                    .unwrap()
-                    .push_back((endpoint, client));
-                wrapper.ready_clients_condvar.notify_one();
-            }
-            Err(_e) => {
-                wrapper
-                    .broken_endpoints
-                    .lock()
-                    .unwrap()
-                    .push(InstantEndpoint(
-                        Instant::now() + Duration::from_secs(1),
-                        endpoint,
-                    ));
-                wrapper.broken_endpoints_condvar.notify_one();
-            }
-        }
-    }
-}
-
 impl WrappedHealthClient {
     pub async fn is_alive(
         &mut self,
@@ -273,6 +220,7 @@ impl WrappedHealthClient {
         loop {
             let request = request_generator.generate_request();
 
+            // todo: Try not to take an exclusive ownership over client.
             let (endpoint, mut client) = self
                 .ready_clients_condvar
                 .wait_while(self.ready_clients.lock().unwrap(), |clients| {
@@ -297,6 +245,8 @@ impl WrappedHealthClient {
                 }
                 Err(e) => {
                     // todo: Determine if the endpoint is dead.
+                    // If it is, add it to broken endpoints and retry request to another server.
+                    // If it isn't, just return an error response to the caller.
                     warn!("Error from {:?}: {:?}", endpoint, e);
                     if true {
                         self.broken_endpoints.lock().unwrap().push(InstantEndpoint(
