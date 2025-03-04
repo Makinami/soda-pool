@@ -1,9 +1,5 @@
 use std::{
-    collections::{BinaryHeap, VecDeque},
-    mem::replace,
-    net::IpAddr,
-    sync::Arc,
-    time::{Duration, Instant},
+    collections::{BinaryHeap, VecDeque}, marker::PhantomData, mem::replace, net::IpAddr, sync::Arc, time::{Duration, Instant}
 };
 
 use rand::Rng;
@@ -17,15 +13,35 @@ use crate::{
 
 
 #[derive(Clone)]
-pub struct WrappedHealthClient {
+pub struct WrappedHealthClient<Doc: Doctor> {
     ready_clients: Arc<RwLock<VecDeque<(IpAddr, Channel)>>>,
     broken_endpoints: Arc<BrokenEndpoints>,
 
     _dns_lookup_task: Arc<JoinHandle<()>>,
     _doctor_task: Arc<JoinHandle<()>>,
+
+    _doctor: PhantomData<Doc>,
 }
 
-impl WrappedHealthClient {
+pub trait Doctor: Clone {
+    fn is_channel_alive(channel: &Channel) -> bool;
+    fn is_alice_by_response(response: &Status) -> bool;
+}
+
+#[derive(Clone)]
+pub struct BasicDoctor {}
+
+impl Doctor for BasicDoctor {
+    fn is_channel_alive(_channel: &Channel) -> bool {
+        true
+    }
+
+    fn is_alice_by_response(_response: &Status) -> bool {
+        false
+    }
+}
+
+impl<Doc: Doctor> WrappedHealthClient<Doc> {
     pub fn new(endpoint: EndpointTemplate, dns_interval: Duration) -> Self {
         let ready_clients = Arc::new(RwLock::new(VecDeque::new()));
         let broken_endpoints = Arc::new(BrokenEndpoints::default());
@@ -56,7 +72,7 @@ impl WrappedHealthClient {
                         debug!("Connecting to: {:?}", address);
                         let endpoint = endpoint.build(address);
                         let channel = endpoint.connect().await;
-                        if let Ok(channel) = channel {
+                        if let Ok(channel) = channel && Doc::is_channel_alive(&channel) {
                             ready.push_back((address, channel));
                         } else {
                             broken.push((
@@ -111,11 +127,12 @@ impl WrappedHealthClient {
             broken_endpoints,
             _dns_lookup_task: Arc::new(dns_lookup_task),
             _doctor_task: Arc::new(doctor_task),
+            _doctor: PhantomData,
         }
     }
 }
 
-impl WrappedHealthClient {
+impl<Doc: Doctor> WrappedHealthClient<Doc> {
     pub async fn is_alive(
         &mut self,
         request_generator: impl GeneratesRequest<()>,
@@ -129,6 +146,7 @@ impl WrappedHealthClient {
             }
             let index = rand::rng().random_range(0..read_access.len());
             let (ip_address, channel) = read_access[index].clone();
+            // todo: read_access should be dropped by now to release the lock.
             let mut client = HealthClient::new(channel);
 
             info!("Sending request to {:?}", ip_address);
@@ -144,7 +162,7 @@ impl WrappedHealthClient {
                     // If it is, add it to broken endpoints and retry request to another server.
                     // If it isn't, just return an error response to the caller.
                     warn!("Error from {:?}: {:?}", ip_address, e);
-                    if true {
+                    if !Doc::is_alice_by_response(&e) {
                         let mut write_access = self.ready_clients.write().await;
                         let index = write_access.iter().position(|(e, _)| e == &ip_address);
                         if let Some(index) = index {
