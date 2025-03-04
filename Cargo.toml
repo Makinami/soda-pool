@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = [
+    "example-client",
+    "example-protobuf.gen",
+    "example-server",
+    "tonic-generator",
+]

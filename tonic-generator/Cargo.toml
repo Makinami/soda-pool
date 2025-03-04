@@ -1,0 +1,8 @@
+[package]
+name = "tonic-generator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tonic-build = "0.11"
+prost-build = "0.12"
