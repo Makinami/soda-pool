@@ -1,5 +1,10 @@
 use std::{
-    collections::BinaryHeap, error::Error, marker::PhantomData, mem::replace, net::IpAddr, sync::Arc, time::{Duration, Instant}
+    collections::BinaryHeap,
+    error::Error,
+    mem::replace,
+    net::IpAddr,
+    sync::Arc,
+    time::{Duration, Instant},
 };
 
 use rand::Rng;
@@ -13,7 +18,7 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct WrappedHealthClient<Doc: Doctor = BasicDoctor> {
+pub struct WrappedClient {
     // todo-performance: Consider using another data structure for ready_clients.
     // Vec was a first default choice because it's simple and easy to work with,
     // but I haven't thought about other options yet.
@@ -22,27 +27,9 @@ pub struct WrappedHealthClient<Doc: Doctor = BasicDoctor> {
 
     _dns_lookup_task: Arc<JoinHandle<()>>,
     _doctor_task: Arc<JoinHandle<()>>,
-
-    _doctor: PhantomData<Arc<Doc>>,
 }
 
-pub trait Doctor {
-    // todo-interface: Maybe rename this method. Also, consider splitting Doctor into two separate traits. Or use Fn trait...
-    fn is_alive_by_response(response: &Status) -> bool;
-}
-
-#[derive(Clone)]
-pub struct BasicDoctor {}
-
-impl Doctor for BasicDoctor {
-    fn is_alive_by_response(response: &Status) -> bool {
-        // Initial tests suggest that source of the error is set only when it comes from the library (e.g. connection refused).
-        // All errors that come from the server are not errors in a sense of connection problems so they don't set source.
-        response.source().is_none()
-    }
-}
-
-impl<Doc: Doctor> WrappedClient<Doc> {
+impl WrappedClient {
     pub fn new(endpoint: EndpointTemplate, dns_interval: Duration) -> Self {
         let ready_clients = Arc::new(RwLock::new(Vec::new()));
         let broken_endpoints = Arc::new(BrokenEndpoints::default());
@@ -125,14 +112,13 @@ impl<Doc: Doctor> WrappedClient<Doc> {
             broken_endpoints,
             _dns_lookup_task: Arc::new(dns_lookup_task),
             _doctor_task: Arc::new(doctor_task),
-            _doctor: PhantomData,
         }
     }
 }
 
 macro_rules! define_method {
     ($client:ident, $name:ident, $request:ty, $response:ty) => {
-        impl<Doc: Doctor> WrappedHealthClient<Doc> {
+        impl WrappedClient {
             pub async fn $name(
                 &mut self,
                 request_generator: impl GeneratesRequest<$request>,
@@ -160,10 +146,11 @@ macro_rules! define_method {
                             return Ok(response);
                         }
                         Err(e) => {
-                            // If the error happened because the channel is dead (e.g. connection refused),
-                            // add the address to broken endpoints and retry request thought another channel.
                             warn!("Error from {:?}: {:?}", ip_address, e);
-                            if !Doc::is_alive_by_response(&e) {
+                            // Initial tests suggest that source of the error is set only when it comes from the library (e.g. connection refused).
+                            if e.source().is_some() {
+                                // If the error happened because the channel is dead (e.g. connection refused),
+                                // add the address to broken endpoints and retry request thought another channel.
                                 let mut write_access = self.ready_clients.write().await;
                                 let index = write_access.iter().position(|(e, _)| e == &ip_address);
                                 if let Some(index) = index {
@@ -171,7 +158,7 @@ macro_rules! define_method {
                                 }
                                 self.broken_endpoints.add_address(ip_address);
                             } else {
-                                // Otherwise, return the error to the caller.
+                                // All errors that come from the server are not errors in a sense of connection problems so they don't set source.
                                 error!("Return server error {:?} from {:?}", e, ip_address);
                                 return Err(e.into());
                             }
