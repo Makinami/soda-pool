@@ -62,6 +62,10 @@ where
     T: Clone,
 {
     fn generate_request(&self) -> impl tonic::IntoRequest<T> {
-        tonic::Request::from_parts(self.metadata.clone(), (self.extensions_generator)(), self.message.clone())
+        tonic::Request::from_parts(
+            self.metadata.clone(),
+            (self.extensions_generator)(),
+            self.message.clone(),
+        )
     }
 }

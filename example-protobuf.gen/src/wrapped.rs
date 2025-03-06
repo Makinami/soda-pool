@@ -1,5 +1,10 @@
 use std::{
-    collections::BinaryHeap, marker::PhantomData, mem::replace, net::IpAddr, sync::Arc, time::{Duration, Instant}
+    collections::BinaryHeap,
+    marker::PhantomData,
+    mem::replace,
+    net::IpAddr,
+    sync::Arc,
+    time::{Duration, Instant},
 };
 
 use rand::Rng;
@@ -14,7 +19,7 @@ use crate::{
 
 #[derive(Clone)]
 pub struct WrappedHealthClient<Doc: Doctor = BasicDoctor> {
-    // todo: Consider using another data structure for ready_clients.
+    // todo-performance: Consider using another data structure for ready_clients.
     // Vec was a first default choice because it's simple and easy to work with,
     // but I haven't thought about other options yet.
     ready_clients: Arc<RwLock<Vec<(IpAddr, Channel)>>>,
@@ -28,7 +33,7 @@ pub struct WrappedHealthClient<Doc: Doctor = BasicDoctor> {
 
 pub trait Doctor {
     fn is_channel_alive(channel: &Channel) -> bool;
-    // todo: Maybe rename this method. Also, consider splitting Doctor into two separate traits. Or use Fn trait...
+    // todo-interface: Maybe rename this method. Also, consider splitting Doctor into two separate traits. Or use Fn trait...
     fn is_alive_by_response(response: &Status) -> bool;
 }
 
@@ -41,7 +46,7 @@ impl Doctor for BasicDoctor {
     }
 
     fn is_alive_by_response(_response: &Status) -> bool {
-        // todo: check if source of the error is the transport layer.
+        // todo-correctness: check if source of the error is the transport layer.
         // E.g.:
         // Status {
         //     code: Unavailable,
@@ -77,7 +82,7 @@ impl<Doc: Doctor> WrappedHealthClient<Doc> {
                     let mut ready = Vec::new();
                     let mut broken = BinaryHeap::new();
 
-                    // todo: Look at the current endpoints to skip testing them again.
+                    // todo-performance: Look at the current endpoints to skip testing them again.
                     // Note: Changing implementation from Mutex to RwLock made it much nicer,
                     // but I still wonder about the performance implications of resting all endpoints each time we refresh DNS.
                     for address in addresses {
@@ -108,7 +113,7 @@ impl<Doc: Doctor> WrappedHealthClient<Doc> {
             tokio::spawn(async move {
                 let wait_duration = Duration::MAX;
                 loop {
-                    // todo: block_in_place is not the best solution here. It will prevent further tasks from being scheduled on the current thread,
+                    // todo-performance: block_in_place is not the best solution here. It will prevent further tasks from being scheduled on the current thread,
                     // but may block the ones already scheduled. It's ok for now for testing but should be avoided in production.
                     let Some(ip_address) = tokio::task::block_in_place(|| {
                         broken_endpoints.next_broken_ip_address(wait_duration)
@@ -126,7 +131,7 @@ impl<Doc: Doctor> WrappedHealthClient<Doc> {
                         // Maybe channel communication would be better here.
                         ready_clients.write().await.push((ip_address, channel));
                     } else {
-                        // todo: implement exponential backoff.
+                        // todo-performance: implement exponential backoff.
                         warn!("Can't connect to {:?}", ip_address);
                         broken_endpoints.add_address(ip_address);
                     }
@@ -199,8 +204,7 @@ macro_rules! define_method {
 
 define_method!(HealthClient, is_alive, (), crate::health::IsAliveResponse);
 
-
-// todo: In general take care of error handling. This is just a quick draft.
+// todo-interface: In general take care of error handling. This is just a quick draft.
 #[derive(Debug)]
 pub enum WrappedStatus {
     Status(tonic::Status),
