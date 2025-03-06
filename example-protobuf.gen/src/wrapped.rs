@@ -4,7 +4,7 @@ use std::{
 
 use rand::Rng;
 use tokio::{sync::RwLock, task::JoinHandle, time::interval};
-use tonic::{transport::Channel, IntoRequest, Status};
+use tonic::{transport::Channel, Status};
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -119,13 +119,9 @@ impl<Doc: Doctor> WrappedHealthClient<Doc> {
                     let connection_test_result = endpoint.build(ip_address).connect().await;
 
                     if let Ok(channel) = connection_test_result
-                        // todo: Make this configurable!
-                        && HealthClient::new(channel.clone())
-                            .is_alive(().into_request())
-                            .await
-                            .is_ok()
+                        && Doc::is_channel_alive(&channel)
                     {
-                        info!("Health check passed for {:?}", ip_address);
+                        info!("Connection established to {:?}", ip_address);
                         // note: If only this task wouldn't use ready_clients, it would be trivial to move it to BrokenEndpoints itself.
                         // Maybe channel communication would be better here.
                         ready_clients.write().await.push((ip_address, channel));
@@ -149,7 +145,7 @@ impl<Doc: Doctor> WrappedHealthClient<Doc> {
 }
 
 macro_rules! define_method {
-    ($name:ident, $request:ty, $response:ty) => {
+    ($client:ident, $name:ident, $request:ty, $response:ty) => {
         impl<Doc: Doctor> WrappedHealthClient<Doc> {
             pub async fn $name(
                 &mut self,
@@ -170,7 +166,7 @@ macro_rules! define_method {
 
                     info!("Sending request to {:?}", ip_address);
                     let request = request_generator.generate_request();
-                    let result = HealthClient::new(channel).$name(request).await;
+                    let result = $client::new(channel).$name(request).await;
 
                     match result {
                         Ok(response) => {
@@ -201,7 +197,7 @@ macro_rules! define_method {
     };
 }
 
-define_method!(is_alive, (), crate::health::IsAliveResponse);
+define_method!(HealthClient, is_alive, (), crate::health::IsAliveResponse);
 
 
 // todo: In general take care of error handling. This is just a quick draft.
