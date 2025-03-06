@@ -252,7 +252,7 @@ impl EndpointTemplate {
     pub fn domain(&self) -> &str {
         // Unwrap is safe as we are making sure Url contains a domain in the
         // constructor.
-        &self.url.domain().unwrap()
+        self.url.domain().unwrap()
     }
 
     fn build_uri(&self, ip_addr: IpAddr) -> Uri {

@@ -15,7 +15,7 @@ use tokio::time::sleep;
 const PORT: u16 = 50001;
 
 #[tokio::main]
-async fn main() -> () {
+async fn main() {
     let mut tasks = HashMap::new();
 
     macro_rules! start_server {
