@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use example_protobuf::{BasicDoctor, EndpointTemplate, RequestGenerator, WrappedHealthClient};
+use example_protobuf::{EndpointTemplate, RequestGenerator, WrappedHealthClient};
 use tokio::{task::JoinSet, time::interval};
 use tracing::info;
 use url::Url;
@@ -11,7 +11,7 @@ async fn main() {
     colog::init();
 
     let template = EndpointTemplate::new(Url::parse("http://localhost:50001").unwrap()).unwrap();
-    let client = WrappedHealthClient::<BasicDoctor>::new(template, Duration::from_secs(1));
+    let client = <WrappedHealthClient>::new(template, Duration::from_secs(1));
 
     for _ in 0..4 {
         let mut client = client.clone();

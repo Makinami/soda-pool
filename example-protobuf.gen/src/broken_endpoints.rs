@@ -1,4 +1,10 @@
-use std::{collections::BinaryHeap, mem::replace, net::IpAddr, sync::Mutex, time::{Duration, Instant}};
+use std::{
+    collections::BinaryHeap,
+    mem::replace,
+    net::IpAddr,
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 type InstantEndpoint = (Instant, IpAddr);
 
@@ -29,10 +35,7 @@ impl BrokenEndpoints {
 
     pub(crate) fn add_address(&self, address: IpAddr) {
         let mut guard = self.endpoints.lock().unwrap();
-        guard.push((
-            Instant::now() + Duration::from_secs(1),
-            address,
-        ));
+        guard.push((Instant::now() + Duration::from_secs(1), address));
         self.condvar.notify_one();
     }
 
