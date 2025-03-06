@@ -1,7 +1,7 @@
 [package]
 name = "tonic-generator"
 version = "0.1.0"
-edition = "2021"
+edition = { workspace = true }
 
 [dependencies]
 prost-build = { workspace = true }

@@ -4,6 +4,6 @@ fn main() {
 
     tonic_build::configure()
         .out_dir("./example-protobuf.gen/src")
-        .compile_with_config(config, &["./proto/example.proto"], &["./proto"])
+        .compile_protos_with_config(config, &["./proto/example.proto"], &["./proto"])
         .expect("failed to compile proto file");
 }

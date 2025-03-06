@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "auto-discovery",
     "example-client",
@@ -8,15 +8,17 @@ members = [
     "tonic-generator",
 ]
 
+package.edition = "2024"
+
 [workspace.dependencies]
 colog = "1"
-http = "0.2"
-prost = "0.12"
-prost-build = "0.12"
+http = "1"
+prost = "0.13"
+prost-build = "0.13"
 rand = "0.9"
 rstest = "0.25"
 tokio = "1"
-tonic = "0.11"
-tonic-build = "0.11"
+tonic = "0.12"
+tonic-build = "0.12"
 tracing = "0.1"
 url = "2"
