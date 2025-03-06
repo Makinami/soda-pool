@@ -8,5 +8,5 @@ mod broken_endpoints;
 mod endpoint_template;
 pub use endpoint_template::*;
 
-mod request_generator;
-pub use request_generator::*;
+mod cloneable_request;
+pub use cloneable_request::*;

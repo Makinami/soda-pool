@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use tonic::{metadata::MetadataMap, Extensions};
+use tonic::{metadata::MetadataMap, Extensions, IntoRequest};
 
 type ExtensionsGeneratorFn = dyn Fn() -> Extensions + Send + Sync;
 
 #[derive(Clone)]
-pub struct RequestGenerator<T>
+pub struct CloneableRequest<T>
 where
     T: Clone,
 {
@@ -14,7 +14,7 @@ where
     extensions_generator: Arc<ExtensionsGeneratorFn>,
 }
 
-impl<T> From<T> for RequestGenerator<T>
+impl<T> From<T> for CloneableRequest<T>
 where
     T: Clone,
 {
@@ -27,7 +27,7 @@ where
     }
 }
 
-impl<T> RequestGenerator<T>
+impl<T> CloneableRequest<T>
 where
     T: Clone,
 {
@@ -53,19 +53,11 @@ where
     }
 }
 
-pub trait GeneratesRequest<T> {
-    fn generate_request(&self) -> impl tonic::IntoRequest<T>;
-}
-
-impl<T> GeneratesRequest<T> for RequestGenerator<T>
+impl<T> IntoRequest<T> for CloneableRequest<T>
 where
     T: Clone,
 {
-    fn generate_request(&self) -> impl tonic::IntoRequest<T> {
-        tonic::Request::from_parts(
-            self.metadata.clone(),
-            (self.extensions_generator)(),
-            self.message.clone(),
-        )
+    fn into_request(self) -> tonic::Request<T> {
+        tonic::Request::from_parts(self.metadata, (self.extensions_generator)(), self.message)
     }
 }

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use auto_discovery::{EndpointTemplate, RequestGenerator};
+use auto_discovery::{EndpointTemplate, CloneableRequest};
 use example_protobuf::WrappedClient;
 use tokio::{task::JoinSet, time::interval};
 use tracing::info;
@@ -18,7 +18,7 @@ async fn main() {
         let mut client = client.clone();
         set.spawn(async move {
             let mut interval = interval(Duration::from_millis(10000));
-            let request = RequestGenerator::new(());
+            let request = CloneableRequest::new(());
             loop {
                 interval.tick().await;
                 let response = client.is_alive(request.clone()).await;
