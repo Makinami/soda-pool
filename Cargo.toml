@@ -7,3 +7,16 @@ members = [
     "example-server",
     "tonic-generator",
 ]
+
+[workspace.dependencies]
+colog = "1"
+http = "0.2"
+prost = "0.12"
+prost-build = "0.12"
+rand = "0.9"
+rstest = "0.25"
+tokio = "1"
+tonic = "0.11"
+tonic-build = "0.11"
+tracing = "0.1"
+url = "2"

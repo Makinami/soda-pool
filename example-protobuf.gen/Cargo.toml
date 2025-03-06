@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-auto-discovery = { path = "../auto-discovery" }
+http = { workspace = true }
+prost = { workspace = true }
+tonic = { workspace = true }
 
-tonic = "0.11"
-prost = "0.12"
-http = "0.2"
+auto-discovery = { path = "../auto-discovery" }

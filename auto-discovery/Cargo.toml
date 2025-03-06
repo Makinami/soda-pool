@@ -4,15 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tonic = "0.11"
-http = "0.2"
-tokio = "1.0"
-tracing = "0.1"
-rand = "0.9"
-url = "2.5"
+http = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
 
 [features]
 mock-dns = []
 
 [dev-dependencies]
-rstest = "0.25"
+rstest = { workspace = true }
