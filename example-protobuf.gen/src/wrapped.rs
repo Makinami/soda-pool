@@ -1,10 +1,5 @@
 use std::{
-    collections::BinaryHeap,
-    marker::PhantomData,
-    mem::replace,
-    net::IpAddr,
-    sync::Arc,
-    time::{Duration, Instant},
+    collections::BinaryHeap, error::Error, marker::PhantomData, mem::replace, net::IpAddr, sync::Arc, time::{Duration, Instant}
 };
 
 use rand::Rng;
@@ -32,7 +27,6 @@ pub struct WrappedHealthClient<Doc: Doctor = BasicDoctor> {
 }
 
 pub trait Doctor {
-    fn is_channel_alive(channel: &Channel) -> bool;
     // todo-interface: Maybe rename this method. Also, consider splitting Doctor into two separate traits. Or use Fn trait...
     fn is_alive_by_response(response: &Status) -> bool;
 }
@@ -41,11 +35,6 @@ pub trait Doctor {
 pub struct BasicDoctor {}
 
 impl Doctor for BasicDoctor {
-    fn is_channel_alive(_channel: &Channel) -> bool {
-        // If we could even create channel, it means it's alive.
-        true
-    }
-
     fn is_alive_by_response(response: &Status) -> bool {
         // Initial tests suggest that source of the error is set only when it comes from the library (e.g. connection refused).
         // All errors that come from the server are not errors in a sense of connection problems so they don't set source.
@@ -85,9 +74,7 @@ impl<Doc: Doctor> WrappedClient<Doc> {
                         debug!("Connecting to: {:?}", address);
                         let endpoint = endpoint.build(address);
                         let channel = endpoint.connect().await;
-                        if let Ok(channel) = channel
-                            && Doc::is_channel_alive(&channel)
-                        {
+                        if let Ok(channel) = channel {
                             ready.push((address, channel));
                         } else {
                             broken.push((Instant::now() + Duration::from_secs(1), address));
@@ -119,9 +106,7 @@ impl<Doc: Doctor> WrappedClient<Doc> {
 
                     let connection_test_result = endpoint.build(ip_address).connect().await;
 
-                    if let Ok(channel) = connection_test_result
-                        && Doc::is_channel_alive(&channel)
-                    {
+                    if let Ok(channel) = connection_test_result {
                         info!("Connection established to {:?}", ip_address);
                         // note: If only this task wouldn't use ready_clients, it would be trivial to move it to BrokenEndpoints itself.
                         // Maybe channel communication would be better here.
