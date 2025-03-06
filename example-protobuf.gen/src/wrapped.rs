@@ -148,54 +148,60 @@ impl<Doc: Doctor> WrappedHealthClient<Doc> {
     }
 }
 
-impl<Doc: Doctor> WrappedHealthClient<Doc> {
-    pub async fn is_alive(
-        &mut self,
-        request_generator: impl GeneratesRequest<()>,
-    ) -> Result<tonic::Response<crate::health::IsAliveResponse>, WrappedStatus> {
-        loop {
-            // Get channel of random index.
-            let (ip_address, channel) = {
-                let read_access = self.ready_clients.read().await;
-                if read_access.is_empty() {
-                    // If there are no healthy channels, maybe we could trigger DNS lookup from here?
-                    return Err(WrappedStatus::NoReadyChannels);
-                }
-                // If we keep track of what channels are currently being used, we could better load balance them.
-                let index = rand::rng().random_range(0..read_access.len());
-                read_access[index].clone()
-            };
-
-            info!("Sending request to {:?}", ip_address);
-            let request = request_generator.generate_request();
-            let result = HealthClient::new(channel).is_alive(request).await;
-
-            match result {
-                Ok(response) => {
-                    info!("Received response from {:?}", ip_address);
-                    return Ok(response);
-                }
-                Err(e) => {
-                    // If the error happened because the channel is dead (e.g. connection refused),
-                    // add the address to broken endpoints and retry request thought another channel.
-                    warn!("Error from {:?}: {:?}", ip_address, e);
-                    if !Doc::is_alive_by_response(&e) {
-                        let mut write_access = self.ready_clients.write().await;
-                        let index = write_access.iter().position(|(e, _)| e == &ip_address);
-                        if let Some(index) = index {
-                            write_access.remove(index);
+macro_rules! define_method {
+    ($name:ident, $request:ty, $response:ty) => {
+        impl<Doc: Doctor> WrappedHealthClient<Doc> {
+            pub async fn $name(
+                &mut self,
+                request_generator: impl GeneratesRequest<$request>,
+            ) -> Result<tonic::Response<$response>, WrappedStatus> {
+                loop {
+                    // Get channel of random index.
+                    let (ip_address, channel) = {
+                        let read_access = self.ready_clients.read().await;
+                        if read_access.is_empty() {
+                            // If there are no healthy channels, maybe we could trigger DNS lookup from here?
+                            return Err(WrappedStatus::NoReadyChannels);
                         }
-                        self.broken_endpoints.add_address(ip_address);
-                    } else {
-                        // Otherwise, return the error to the caller.
-                        error!("Return server error {:?} from {:?}", e, ip_address);
-                        return Err(e.into());
+                        // If we keep track of what channels are currently being used, we could better load balance them.
+                        let index = rand::rng().random_range(0..read_access.len());
+                        read_access[index].clone()
+                    };
+
+                    info!("Sending request to {:?}", ip_address);
+                    let request = request_generator.generate_request();
+                    let result = HealthClient::new(channel).$name(request).await;
+
+                    match result {
+                        Ok(response) => {
+                            info!("Received response from {:?}", ip_address);
+                            return Ok(response);
+                        }
+                        Err(e) => {
+                            // If the error happened because the channel is dead (e.g. connection refused),
+                            // add the address to broken endpoints and retry request thought another channel.
+                            warn!("Error from {:?}: {:?}", ip_address, e);
+                            if !Doc::is_alive_by_response(&e) {
+                                let mut write_access = self.ready_clients.write().await;
+                                let index = write_access.iter().position(|(e, _)| e == &ip_address);
+                                if let Some(index) = index {
+                                    write_access.remove(index);
+                                }
+                                self.broken_endpoints.add_address(ip_address);
+                            } else {
+                                // Otherwise, return the error to the caller.
+                                error!("Return server error {:?} from {:?}", e, ip_address);
+                                return Err(e.into());
+                            }
+                        }
                     }
                 }
             }
         }
-    }
+    };
 }
+
+define_method!(is_alive, (), crate::health::IsAliveResponse);
 
 
 // todo: In general take care of error handling. This is just a quick draft.
