@@ -42,22 +42,18 @@ pub struct BasicDoctor {}
 
 impl Doctor for BasicDoctor {
     fn is_channel_alive(_channel: &Channel) -> bool {
+        // If we could even create channel, it means it's alive.
         true
     }
 
-    fn is_alive_by_response(_response: &Status) -> bool {
-        // todo-correctness: check if source of the error is the transport layer.
-        // E.g.:
-        // Status {
-        //     code: Unavailable,
-        //     message: "error trying to connect: tcp connect error: Connection refused (os error 61)",
-        //     source: Some(tonic::transport::Error(Transport, hyper::Error(Connect, ConnectError("tcp connect error", Os { code: 61, kind: ConnectionRefused, message: "Connection refused" }))))
-        // }
-        false
+    fn is_alive_by_response(response: &Status) -> bool {
+        // Initial tests suggest that source of the error is set only when it comes from the library (e.g. connection refused).
+        // All errors that come from the server are not errors in a sense of connection problems so they don't set source.
+        response.source().is_none()
     }
 }
 
-impl<Doc: Doctor> WrappedHealthClient<Doc> {
+impl<Doc: Doctor> WrappedClient<Doc> {
     pub fn new(endpoint: EndpointTemplate, dns_interval: Duration) -> Self {
         let ready_clients = Arc::new(RwLock::new(Vec::new()));
         let broken_endpoints = Arc::new(BrokenEndpoints::default());
