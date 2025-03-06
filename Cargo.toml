@@ -22,3 +22,6 @@ tonic = "0.12"
 tonic-build = "0.12"
 tracing = "0.1"
 url = "2"
+# I do not understand why example-protobuf.gen needs this dependency, and an older version at that,
+# but without it, tokio panics with an integer overflow when operating on Instants and Durations.
+tower = "0.4"
