@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
-    net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
+    io::Write,
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
     time::Duration,
 };
 
@@ -11,110 +12,96 @@ use example_protobuf::{
 use rand::random_range;
 use tokio::time::sleep;
 
+const PORT: u16 = 50001;
+
 #[tokio::main]
 async fn main() -> () {
     let mut tasks = HashMap::new();
 
+    macro_rules! start_server {
+        ($address:expr) => {
+            let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+            let server = tokio::spawn(async move {
+                tonic::transport::Server::builder()
+                    .add_service(HealthServer::new(HealthImpl { address: $address }))
+                    .add_service(EchoServer::new(EchoImpl {}))
+                    .serve_with_shutdown($address, async {
+                        rx.await.ok();
+                    })
+                    .await
+            });
+            tasks.insert($address, (server, tx));
+            println!("Started server on {}", $address);
+        };
+    }
+
+    macro_rules! try_start_server {
+        ($address:expr) => {
+            if tasks.get(&$address).is_some() {
+                println!("Server on {} already started", $address);
+            } else {
+                start_server!($address);
+            }
+        };
+    }
+
+    macro_rules! stop_server {
+        ($address:expr) => {
+            if let Some(task) = tasks.remove(&$address) {
+                let _ = task.1.send(());
+                println!("Server on {} scheduled to stop", $address);
+            }
+        };
+    }
+
+    println!("Type 'help' for a list of available commands");
+
     let mut input = String::new();
-    while std::io::stdin().read_line(&mut input).is_ok() {
-        if input.trim() == "exit" {
-            break;
-        }
-
-        if input.starts_with("start v4") {
-            let parts: Vec<&str> = input.split_whitespace().collect();
-            if parts.len() != 3 {
-                println!("Invalid command");
-                input.clear();
-                continue;
+    while {
+        print!("> ");
+        let _ = std::io::stdout().flush();
+        std::io::stdin().read_line(&mut input).is_ok()
+    } {
+        match input.trim() {
+            "exit" => break,
+            "start v4" => {
+                let address = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), PORT);
+                try_start_server!(address);
             }
-
-            let port = parts[2].parse::<u16>().unwrap();
-            if tasks.get(&port).is_some() {
-                println!("Task on port {} already started", port);
-            } else {
-                let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-                let server = tokio::spawn(async move {
-                    let address = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), port).into();
-                    tonic::transport::Server::builder()
-                        .add_service(HealthServer::new(HealthImpl { address }))
-                        .add_service(EchoServer::new(EchoImpl {}))
-                        .serve_with_shutdown(address, async {
-                            rx.await.ok();
-                        })
-                        .await
-                });
-                tasks.insert(port + 4000, (server, tx));
-                println!("Task on port {} started", port);
+            "start v6" => {
+                let address = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), PORT);
+                try_start_server!(address);
             }
-        }
-
-        if input.starts_with("start v6") {
-            let parts: Vec<&str> = input.split_whitespace().collect();
-            if parts.len() != 3 {
-                println!("Invalid command");
-                input.clear();
-                continue;
+            "stop v4" => {
+                let address = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), PORT);
+                stop_server!(address);
             }
-
-            let port = parts[2].parse::<u16>().unwrap();
-            if tasks.get(&port).is_some() {
-                println!("Task on port {} already started", port);
-            } else {
-                let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-                let server = tokio::spawn(async move {
-                    let address = SocketAddrV6::new(Ipv6Addr::LOCALHOST, port, 0, 0).into();
-                    tonic::transport::Server::builder()
-                        .add_service(HealthServer::new(HealthImpl { address }))
-                        .add_service(EchoServer::new(EchoImpl {}))
-                        .serve_with_shutdown(address, async {
-                            rx.await.ok();
-                        })
-                        .await
-                });
-                tasks.insert(port + 6000, (server, tx));
-                println!("Task on port {} started", port);
+            "stop v6" => {
+                let address = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), PORT);
+                stop_server!(address);
             }
-        }
-
-        if input.starts_with("stop v4") {
-            let parts: Vec<&str> = input.split_whitespace().collect();
-            if parts.len() != 3 {
-                println!("Invalid command");
-                input.clear();
-                continue;
+            "list" => {
+                for (address, task) in tasks.iter() {
+                    println!(
+                        "Server on socket {} is running: {}",
+                        address,
+                        !task.0.is_finished()
+                    );
+                }
+                if tasks.is_empty() {
+                    println!("No servers running");
+                }
             }
-
-            let port = parts[2].parse::<u16>().unwrap();
-            if let Some(task) = tasks.remove(&(port + 4000)) {
-                let _ = task.1.send(());
-                println!("Task on port {} stopped", port);
+            "help" => {
+                println!("Available commands:");
+                println!("  start v4   Start server on IPv4 localhost");
+                println!("  start v6   Start server on IPv6 localhost");
+                println!("  stop v4    Stop server on IPv4 localhost");
+                println!("  stop v6    Stop server on IPv6 localhost");
+                println!("  list       List running servers");
+                println!("  exit       Exit the program");
             }
-        }
-
-        if input.starts_with("stop v6") {
-            let parts: Vec<&str> = input.split_whitespace().collect();
-            if parts.len() != 3 {
-                println!("Invalid command");
-                input.clear();
-                continue;
-            }
-
-            let port = parts[2].parse::<u16>().unwrap();
-            if let Some(task) = tasks.remove(&(port + 6000)) {
-                let _ = task.1.send(());
-                println!("Task on port {} stopped", port);
-            }
-        }
-
-        if input.starts_with("list") {
-            for (port, task) in tasks.iter() {
-                println!(
-                    "Task on port {} is running: {}",
-                    port,
-                    !task.0.is_finished()
-                );
-            }
+            cmd => println!("Unknown command: {}", cmd),
         }
 
         input.clear();
