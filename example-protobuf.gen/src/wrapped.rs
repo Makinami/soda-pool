@@ -114,6 +114,26 @@ impl WrappedClient {
             _doctor_task: Arc::new(doctor_task),
         }
     }
+
+    pub async fn get_channel(&self) -> Result<(IpAddr, Channel), WrappedStatus> {
+        let read_access = self.ready_clients.read().await;
+        if read_access.is_empty() {
+            // If there are no healthy channels, maybe we could trigger DNS lookup from here?
+            return Err(WrappedStatus::NoReadyChannels);
+        }
+        // If we keep track of what channels are currently being used, we could better load balance them.
+        let index = rand::rng().random_range(0..read_access.len());
+        Ok(read_access[index].clone())
+    }
+
+    pub async fn report_broken(&self, ip_address: IpAddr) {
+        let mut write_access = self.ready_clients.write().await;
+        let index = write_access.iter().position(|(e, _)| e == &ip_address);
+        if let Some(index) = index {
+            write_access.remove(index);
+        }
+        self.broken_endpoints.add_address(ip_address);
+    }
 }
 
 macro_rules! define_method {
@@ -125,16 +145,7 @@ macro_rules! define_method {
             ) -> Result<tonic::Response<$response>, WrappedStatus> {
                 loop {
                     // Get channel of random index.
-                    let (ip_address, channel) = {
-                        let read_access = self.ready_clients.read().await;
-                        if read_access.is_empty() {
-                            // If there are no healthy channels, maybe we could trigger DNS lookup from here?
-                            return Err(WrappedStatus::NoReadyChannels);
-                        }
-                        // If we keep track of what channels are currently being used, we could better load balance them.
-                        let index = rand::rng().random_range(0..read_access.len());
-                        read_access[index].clone()
-                    };
+                    let (ip_address, channel) = self.get_channel().await?;
 
                     info!("Sending request to {:?}", ip_address);
                     let request = request_generator.generate_request();
@@ -151,12 +162,7 @@ macro_rules! define_method {
                             if e.source().is_some() {
                                 // If the error happened because the channel is dead (e.g. connection refused),
                                 // add the address to broken endpoints and retry request thought another channel.
-                                let mut write_access = self.ready_clients.write().await;
-                                let index = write_access.iter().position(|(e, _)| e == &ip_address);
-                                if let Some(index) = index {
-                                    write_access.remove(index);
-                                }
-                                self.broken_endpoints.add_address(ip_address);
+                                self.report_broken(ip_address).await;
                             } else {
                                 // All errors that come from the server are not errors in a sense of connection problems so they don't set source.
                                 error!("Return server error {:?} from {:?}", e, ip_address);
