@@ -138,36 +138,34 @@ impl WrappedClient {
 
 macro_rules! define_method {
     ($client:ident, $name:ident, $request:ty, $response:ty) => {
-        impl WrappedClient {
-            pub async fn $name(
-                &mut self,
-                request_generator: impl GeneratesRequest<$request>,
-            ) -> Result<tonic::Response<$response>, WrappedStatus> {
-                loop {
-                    // Get channel of random index.
-                    let (ip_address, channel) = self.get_channel().await?;
+        pub async fn $name(
+            &mut self,
+            request_generator: impl GeneratesRequest<$request>,
+        ) -> Result<tonic::Response<$response>, WrappedStatus> {
+            loop {
+                // Get channel of random index.
+                let (ip_address, channel) = self.get_channel().await?;
 
-                    info!("Sending request to {:?}", ip_address);
-                    let request = request_generator.generate_request();
-                    let result = $client::new(channel).$name(request).await;
+                info!("Sending request to {:?}", ip_address);
+                let request = request_generator.generate_request();
+                let result = $client::new(channel).$name(request).await;
 
-                    match result {
-                        Ok(response) => {
-                            info!("Received response from {:?}", ip_address);
-                            return Ok(response);
-                        }
-                        Err(e) => {
-                            warn!("Error from {:?}: {:?}", ip_address, e);
-                            // Initial tests suggest that source of the error is set only when it comes from the library (e.g. connection refused).
-                            if e.source().is_some() {
-                                // If the error happened because the channel is dead (e.g. connection refused),
-                                // add the address to broken endpoints and retry request thought another channel.
-                                self.report_broken(ip_address).await;
-                            } else {
-                                // All errors that come from the server are not errors in a sense of connection problems so they don't set source.
-                                error!("Return server error {:?} from {:?}", e, ip_address);
-                                return Err(e.into());
-                            }
+                match result {
+                    Ok(response) => {
+                        info!("Received response from {:?}", ip_address);
+                        return Ok(response);
+                    }
+                    Err(e) => {
+                        warn!("Error from {:?}: {:?}", ip_address, e);
+                        // Initial tests suggest that source of the error is set only when it comes from the library (e.g. connection refused).
+                        if e.source().is_some() {
+                            // If the error happened because the channel is dead (e.g. connection refused),
+                            // add the address to broken endpoints and retry request thought another channel.
+                            self.report_broken(ip_address).await;
+                        } else {
+                            // All errors that come from the server are not errors in a sense of connection problems so they don't set source.
+                            error!("Return server error {:?} from {:?}", e, ip_address);
+                            return Err(e.into());
                         }
                     }
                 }
@@ -176,7 +174,9 @@ macro_rules! define_method {
     };
 }
 
-define_method!(HealthClient, is_alive, (), crate::health::IsAliveResponse);
+impl WrappedClient {
+    define_method!(HealthClient, is_alive, (), crate::health::IsAliveResponse);
+}
 
 // todo-interface: In general take care of error handling. This is just a quick draft.
 #[derive(Debug)]

@@ -24,7 +24,10 @@ async fn main() {
             let (tx, rx) = tokio::sync::oneshot::channel::<()>();
             let server = tokio::spawn(async move {
                 tonic::transport::Server::builder()
-                    .add_service(HealthServer::new(HealthImpl { address: $address, reliability }))
+                    .add_service(HealthServer::new(HealthImpl {
+                        address: $address,
+                        reliability,
+                    }))
                     .add_service(EchoServer::new(EchoImpl {}))
                     .serve_with_shutdown($address, async {
                         rx.await.ok();
@@ -108,12 +111,15 @@ async fn main() {
                 if cmd.starts_with("reliability ") {
                     if let Ok(value) = cmd.split_once(' ').unwrap().1.parse() {
                         reliability = value;
+                        println!(
+                            "Reliability set to {}. Restarting servers (if there are any)...",
+                            reliability
+                        );
                         let addresses: Vec<_> = tasks.keys().copied().collect();
                         for address in addresses {
                             stop_server!(address);
                             start_server!(address);
                         }
-                        println!("Reliability set to {}", reliability);
                     } else {
                         println!("Invalid reliability value");
                     }

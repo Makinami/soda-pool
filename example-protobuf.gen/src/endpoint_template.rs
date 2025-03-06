@@ -3,7 +3,7 @@ use std::{net::IpAddr, str::FromStr, time::Duration};
 use tonic::transport::{Endpoint, Uri};
 use url::{Host, Url};
 
-// todo: Different versions of tonic have slightly different API for Endpoint.
+// todo-interface: Different versions of tonic have slightly different API for Endpoint.
 // Decide on currently supported version and mach the model.
 #[derive(Debug, Clone)]
 pub struct EndpointTemplate {
