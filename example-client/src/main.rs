@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use example_protobuf::{EndpointTemplate, RequestGenerator, WrappedClient};
+use auto_discovery::{EndpointTemplate, RequestGenerator};
+use example_protobuf::WrappedClient;
 use tokio::{task::JoinSet, time::interval};
 use tracing::info;
 use url::Url;
@@ -16,7 +17,7 @@ async fn main() {
     for _ in 0..4 {
         let mut client = client.clone();
         set.spawn(async move {
-            let mut interval = interval(Duration::from_millis(1000));
+            let mut interval = interval(Duration::from_millis(10000));
             let request = RequestGenerator::new(());
             loop {
                 interval.tick().await;

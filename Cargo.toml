@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "auto-discovery",
     "example-client",
     "example-protobuf.gen",
     "example-server",

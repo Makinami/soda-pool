@@ -115,6 +115,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "auto-discovery"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "futures-util",
+ "http",
+ "http-body",
+ "hyper",
+ "prost",
+ "rand 0.9.0",
+ "rstest",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tower",
+ "tower-service",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -303,6 +325,7 @@ dependencies = [
 name = "example-client"
 version = "0.1.0"
 dependencies = [
+ "auto-discovery",
  "colog",
  "example-protobuf",
  "futures",
@@ -316,6 +339,7 @@ dependencies = [
 name = "example-protobuf"
 version = "0.1.0"
 dependencies = [
+ "auto-discovery",
  "bytes",
  "futures-core",
  "futures-util",
@@ -324,7 +348,6 @@ dependencies = [
  "hyper",
  "prost",
  "rand 0.9.0",
- "rstest",
  "tokio",
  "tokio-stream",
  "tonic",
