@@ -3,6 +3,8 @@ use std::{net::IpAddr, str::FromStr, time::Duration};
 use tonic::transport::{Endpoint, Uri};
 use url::{Host, Url};
 
+// todo: Different versions of tonic have slightly different API for Endpoint.
+// Decide on currently supported version and mach the model.
 #[derive(Debug, Clone)]
 pub struct EndpointTemplate {
     url: Url,
@@ -82,16 +84,14 @@ impl EndpointTemplate {
         }
     }
 
-    pub fn user_agent(self, user_agent: impl TryInto<HeaderValue>) -> Self {
-        Self {
-            user_agent: Some(
-                user_agent
-                    .try_into()
-                    .map_err(|_| "fubar") // todo: error handling
-                    .expect("header value"),
-            ),
-            ..self
-        }
+    pub fn user_agent(self, user_agent: impl TryInto<HeaderValue>) -> Result<Self, Error> {
+        user_agent
+            .try_into()
+            .map(|ua| Self {
+                user_agent: Some(ua),
+                ..self
+            })
+            .map_err(|_| Error::InvalidUserAgent)
     }
 
     pub fn timeout(self, dur: Duration) -> Self {
@@ -269,6 +269,7 @@ pub enum Error {
     HostMissing,
     AlreadyIpAddress,
     Inconvertible,
+    InvalidUserAgent,
 }
 
 #[cfg(test)]

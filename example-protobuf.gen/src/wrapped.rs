@@ -204,9 +204,6 @@ define_method!(HealthClient, is_alive, (), crate::health::IsAliveResponse);
 #[derive(Debug)]
 pub enum WrappedStatus {
     Status(tonic::Status),
-    //Transport(tonic::transport::Error),
-    //Discover(Box<dyn std::error::Error + Send + Sync>),
-    //Generic(Box<dyn std::error::Error + Send + Sync>),
     NoReadyChannels,
 }
 
@@ -215,38 +212,3 @@ impl From<Status> for WrappedStatus {
         WrappedStatus::Status(e)
     }
 }
-
-// impl From<tower::balance::error::Discover> for WrappedError {
-//     fn from(e: tower::balance::error::Discover) -> Self {
-//         WrappedError::Discover(e.into())
-//     }
-// }
-
-// impl From<tonic::transport::Error> for WrappedError {
-//     fn from(e: tonic::transport::Error) -> Self {
-//         WrappedError::Transport(e)
-//     }
-// }
-
-// impl From<Box<dyn std::error::Error + Send + Sync>> for WrappedError {
-//     fn from(e: Box<dyn std::error::Error + Send + Sync>) -> Self {
-//         WrappedError::Generic(e)
-//     }
-// }
-
-// impl std::fmt::Display for WrappedError {
-//     fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         todo!()
-//     }
-// }
-
-// impl std::error::Error for WrappedError {
-//     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-//         match self {
-//             WrappedError::Transport(e) => Some(e),
-//             WrappedError::Discover(e) => e.source(),
-//             WrappedError::Generic(e) => Some(&**e),
-//             WrappedError::Pool => None,
-//         }
-//     }
-// }
