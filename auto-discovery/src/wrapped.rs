@@ -28,6 +28,9 @@ pub struct WrappedClient {
 }
 
 impl WrappedClient {
+    // todo-interface: Consider what parameters are necessary and how to best pass them.
+    // todo-interface: Return a function that won't resolve until first DNS lookup finishes.
+    //                 This will prevent NoReadeChannels error from happening when user tries to call an API immediately after creating a client.
     pub fn new(endpoint: EndpointTemplate, dns_interval: Duration) -> Self {
         let ready_clients = Arc::new(RwLock::new(Vec::new()));
         let broken_endpoints = Arc::new(BrokenEndpoints::default());
