@@ -9,7 +9,7 @@ use example_protobuf::{
     echo_server::{Echo, EchoServer},
     health_server::{Health, HealthServer},
 };
-use rand::{random_range, Rng};
+use rand::{Rng, random_range};
 use tokio::time::sleep;
 
 const PORT: u16 = 50001;
@@ -18,6 +18,7 @@ const PORT: u16 = 50001;
 async fn main() {
     let mut tasks = HashMap::new();
     let mut reliability = 0.9;
+    let mut avg_wait = Duration::from_millis(500);
 
     macro_rules! start_server {
         ($address:expr) => {
@@ -27,6 +28,7 @@ async fn main() {
                     .add_service(HealthServer::new(HealthImpl {
                         address: $address,
                         reliability,
+                        avg_wait,
                     }))
                     .add_service(EchoServer::new(EchoImpl {}))
                     .serve_with_shutdown($address, async {
@@ -58,6 +60,16 @@ async fn main() {
         };
     }
 
+    macro_rules! restart_servers {
+        () => {
+            let addresses: Vec<_> = tasks.keys().copied().collect();
+            for address in addresses {
+                stop_server!(address);
+                start_server!(address);
+            }
+        };
+    }
+
     println!("Type 'help' for a list of available commands");
 
     let mut input = String::new();
@@ -85,6 +97,8 @@ async fn main() {
                 stop_server!(address);
             }
             "list" => {
+                println!("Reliability: {}", reliability);
+                println!("Average wait: {} ms", avg_wait.as_millis());
                 for (address, task) in tasks.iter() {
                     println!(
                         "Server on socket {} is running: {}",
@@ -103,6 +117,7 @@ async fn main() {
                 println!("  stop v4                Stop server on IPv4 localhost");
                 println!("  stop v6                Stop server on IPv6 localhost");
                 println!("  reliability <value>    Set server reliability (0.0-1.0)");
+                println!("  avg_wait <value>       Set average wait time in milliseconds");
                 println!("  list                   List running servers");
                 println!("  help                   Display this help message");
                 println!("  exit                   Exit the program");
@@ -115,13 +130,20 @@ async fn main() {
                             "Reliability set to {}. Restarting servers (if there are any)...",
                             reliability
                         );
-                        let addresses: Vec<_> = tasks.keys().copied().collect();
-                        for address in addresses {
-                            stop_server!(address);
-                            start_server!(address);
-                        }
+                        restart_servers!();
                     } else {
                         println!("Invalid reliability value");
+                    }
+                } else if cmd.starts_with("avg_wait ") {
+                    if let Ok(value) = cmd.split_once(' ').unwrap().1.parse() {
+                        avg_wait = Duration::from_millis(value);
+                        println!(
+                            "Average wait set to {}. Restarting servers (if there are any)...",
+                            avg_wait.as_millis()
+                        );
+                        restart_servers!();
+                    } else {
+                        println!("Invalid average wait value");
                     }
                 } else {
                     println!("Unknown command: {}", cmd);
@@ -136,6 +158,7 @@ async fn main() {
 struct HealthImpl {
     pub address: SocketAddr,
     pub reliability: f64,
+    pub avg_wait: Duration,
 }
 
 #[tonic::async_trait]
@@ -144,7 +167,10 @@ impl Health for HealthImpl {
         &self,
         _request: tonic::Request<()>,
     ) -> Result<tonic::Response<example_protobuf::IsAliveResponse>, tonic::Status> {
-        sleep(Duration::from_millis(random_range(200..1000))).await;
+        if !self.avg_wait.is_zero() {
+            let wait_range = self.avg_wait/2 .. self.avg_wait*2;
+            sleep(random_range(wait_range)).await;
+        }
         if rand::rng().random_bool(self.reliability) {
             Ok(tonic::Response::new(example_protobuf::IsAliveResponse {
                 message: format!("I'm alive! (from: {:?})", self.address),
