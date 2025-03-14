@@ -8,7 +8,7 @@ use std::{
 
 use rand::Rng;
 use tokio::{sync::RwLock, task::JoinHandle, time::interval};
-use tonic::{transport::Channel, Status};
+use tonic::{Status, transport::Channel};
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -82,7 +82,7 @@ impl WrappedClient {
             let broken_endpoints = broken_endpoints.clone();
 
             tokio::spawn(async move {
-                let wait_duration = Duration::MAX;
+                let wait_duration = Duration::from_secs(1);
                 loop {
                     // todo-performance: block_in_place is not the best solution here. It will prevent further tasks from being scheduled on the current thread,
                     // but may block the ones already scheduled. It's ok for now for testing but should be avoided in production.
@@ -141,7 +141,7 @@ impl WrappedClient {
 macro_rules! define_method {
     ($client:ident, $name:ident, $request:ty, $response:ty) => {
         pub async fn $name(
-            &mut self,
+            &self,
             request: impl tonic::IntoRequest<$request> + Clone,
         ) -> Result<tonic::Response<$response>, WrappedStatus> {
             loop {

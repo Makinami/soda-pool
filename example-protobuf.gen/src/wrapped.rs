@@ -1,7 +1,7 @@
-use auto_discovery::{define_method, EndpointTemplate, WrappedStatus};
-use tonic::transport::Channel;
-use std::{net::IpAddr, time::Duration};
 use auto_discovery::WrappedClient as Base;
+use auto_discovery::{EndpointTemplate, WrappedStatus, define_method};
+use std::{net::IpAddr, time::Duration};
+use tonic::transport::Channel;
 
 use crate::health_client::HealthClient;
 

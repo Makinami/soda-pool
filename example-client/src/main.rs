@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use auto_discovery::{EndpointTemplate, CloneableRequest};
+use auto_discovery::{CloneableRequest, EndpointTemplate};
 use example_protobuf::WrappedClient;
 use tokio::{task::JoinSet, time::interval};
 use tracing::info;
@@ -15,7 +15,7 @@ async fn main() {
     let client = WrappedClient::new(template, Duration::from_secs(1));
 
     for _ in 0..4 {
-        let mut client = client.clone();
+        let client = client.clone();
         set.spawn(async move {
             let mut interval = interval(Duration::from_millis(10000));
             let request = CloneableRequest::new(());

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tonic::{metadata::MetadataMap, Extensions, IntoRequest};
+use tonic::{Extensions, IntoRequest, metadata::MetadataMap};
 
 type ExtensionsGeneratorFn = dyn Fn() -> Extensions + Send + Sync;
 
