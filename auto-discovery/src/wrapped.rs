@@ -108,8 +108,6 @@ impl WrappedClient {
             })
         };
 
-        // todo-correctness: It seems to get stuck when dropped. Need to investigate which of the background tasks is causing it.
-
         Self {
             ready_clients,
             broken_endpoints,

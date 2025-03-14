@@ -1,7 +1,7 @@
 use std::{str::FromStr, sync::atomic::AtomicBool, time::Duration};
 
 use auto_discovery::{CloneableRequest, EndpointTemplate};
-use criterion::{black_box, BenchmarkId, Criterion, Throughput};
+use criterion::{black_box, criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion, PlotConfiguration, Throughput};
 use std::sync::atomic::Ordering::Relaxed;
 use example_protobuf::{WrappedClient, health_client::HealthClient};
 use futures::future::try_join_all;
@@ -11,7 +11,12 @@ use url::Url;
 
 pub fn grpc_client(c: &mut Criterion) {
     let runner = Runtime::new().unwrap();
+
+    let log_plot = PlotConfiguration::default()
+        .summary_scale(AxisScale::Logarithmic);
+
     let mut group = c.benchmark_group("grpc_client");
+    group.plot_config(log_plot);
 
     let address = std::env::var("ADDRESS").unwrap_or_else(|_| "http://localhost:50001".to_string());
 
@@ -48,6 +53,8 @@ pub fn grpc_client(c: &mut Criterion) {
         println!("Some tests failed.");
     }
 
+    drop(client);
+
     prev_test_failed.store(false, Relaxed);
     for i in test_cases.iter() {
         if prev_test_failed.load(Relaxed) {
@@ -70,8 +77,16 @@ pub fn grpc_client(c: &mut Criterion) {
     }
 
     group.finish();
+}
+
+fn grpc_connection(c: &mut Criterion) {
+    let runner = Runtime::new().unwrap();
 
     let mut group = c.benchmark_group("grpc_connection");
+
+    let address = std::env::var("ADDRESS").unwrap_or_else(|_| "http://localhost:50001".to_string());
+
+    let endpoint = Endpoint::from_str(address.as_str()).unwrap();
 
     group.bench_function("connect", |b| {
         b.to_async(&runner).iter(|| async {
@@ -82,14 +97,5 @@ pub fn grpc_client(c: &mut Criterion) {
     group.finish();
 }
 
-pub fn benches() {
-}
-
-fn main() {
-    let mut criterion = Criterion::default()
-        .configure_from_args();
-
-    grpc_client(&mut criterion);
-
-    criterion.final_summary();
-}
+criterion_group!(benches, grpc_client, grpc_connection);
+criterion_main!(benches);
