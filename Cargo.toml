@@ -5,6 +5,7 @@ members = [
     "example-client",
     "example-protobuf.gen",
     "example-server",
+    "perf-benchmark",
     "tonic-generator",
 ]
 

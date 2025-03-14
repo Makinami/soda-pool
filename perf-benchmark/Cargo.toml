@@ -1,0 +1,20 @@
+[package]
+name = "perf-benchmark"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["async_tokio"] }
+tokio = { workspace = true, features = ["full"] }
+example-protobuf = { path = "../example-protobuf.gen" }
+url = { workspace = true }
+auto-discovery = { path = "../auto-discovery" }
+tonic = { workspace = true }
+tower = { workspace = true }
+futures = "0.3"
+
+[[bench]]
+name = "bench"
+harness = false
