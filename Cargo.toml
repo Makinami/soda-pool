@@ -12,6 +12,7 @@ members = [
 package.edition = "2024"
 
 [workspace.dependencies]
+chrono = "0.4"
 colog = "1"
 http = "1"
 prost = "0.13"
