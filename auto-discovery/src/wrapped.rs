@@ -28,6 +28,7 @@ impl WrappedClientBuilder {
     pub fn new(endpoint: EndpointTemplate) -> Self {
         Self {
             endpoint,
+            // todo-interface: Is this a good default?
             dns_interval: Duration::from_secs(5),
         }
     }

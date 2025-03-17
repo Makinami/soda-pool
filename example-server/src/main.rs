@@ -168,7 +168,7 @@ impl Health for HealthImpl {
         _request: tonic::Request<()>,
     ) -> Result<tonic::Response<example_protobuf::IsAliveResponse>, tonic::Status> {
         if !self.avg_wait.is_zero() {
-            let wait_range = self.avg_wait/2 .. self.avg_wait*2;
+            let wait_range = (self.avg_wait / 2)..(self.avg_wait * 2);
             sleep(random_range(wait_range)).await;
         }
         if rand::rng().random_bool(self.reliability) {

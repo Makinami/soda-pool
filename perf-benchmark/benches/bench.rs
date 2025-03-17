@@ -18,9 +18,7 @@ pub fn grpc_client(c: &mut Criterion) {
 
     let template = EndpointTemplate::new(Url::parse(&address).unwrap()).unwrap();
     let endpoint = Endpoint::from_str(address.as_str()).unwrap();
-    let client = runner.block_on(async {
-        WrappedClient::new(template).await
-    });
+    let client = runner.block_on(async { WrappedClient::new(template).await });
 
     let test_cases = [1, 2, 4, 8, 16, 32, 64];
     let prev_test_failed = AtomicBool::new(false);
