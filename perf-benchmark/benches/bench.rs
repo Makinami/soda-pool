@@ -1,7 +1,7 @@
 use std::{str::FromStr, sync::atomic::AtomicBool, time::Duration};
 
 use auto_discovery::{CloneableRequest, EndpointTemplate};
-use criterion::{black_box, criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion, PlotConfiguration, Throughput};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::sync::atomic::Ordering::Relaxed;
 use example_protobuf::{WrappedClient, health_client::HealthClient};
 use futures::future::try_join_all;
@@ -12,11 +12,7 @@ use url::Url;
 pub fn grpc_client(c: &mut Criterion) {
     let runner = Runtime::new().unwrap();
 
-    let log_plot = PlotConfiguration::default()
-        .summary_scale(AxisScale::Logarithmic);
-
     let mut group = c.benchmark_group("grpc_client");
-    group.plot_config(log_plot);
 
     let address = std::env::var("ADDRESS").unwrap_or_else(|_| "http://localhost:50001".to_string());
 
