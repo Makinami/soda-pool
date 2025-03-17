@@ -12,7 +12,7 @@ async fn main() {
     colog::init();
 
     let template = EndpointTemplate::new(Url::parse("http://localhost:50001").unwrap()).unwrap();
-    let client = WrappedClient::new(template);
+    let client = WrappedClient::new(template).await;
 
     for _ in 0..4 {
         let client = client.clone();

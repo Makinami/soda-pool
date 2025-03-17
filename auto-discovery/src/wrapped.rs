@@ -7,7 +7,7 @@ use std::{
 };
 
 use rand::Rng;
-use tokio::{sync::RwLock, task::JoinHandle, time::interval};
+use tokio::{sync::{oneshot::channel, RwLock}, task::JoinHandle, time::interval};
 use tonic::{Status, transport::Channel};
 use tracing::{debug, info, trace, warn};
 
@@ -18,6 +18,11 @@ use crate::{
 pub struct WrappedClientBuilder {
     endpoint: EndpointTemplate,
     dns_interval: Duration,
+}
+
+#[derive(Debug)]
+pub enum WrapperClientBuilderError {
+    FailedToInitiate,
 }
 
 impl WrappedClientBuilder {
@@ -33,11 +38,13 @@ impl WrappedClientBuilder {
         self
     }
 
-    // todo-interface: Return a future that won't resolve until first DNS lookup finishes.
-    //                 This will prevent NoReadeChannels error from happening when user tries to call an API immediately after creating a client.
-    pub fn build(self) -> WrappedClient {
+    // todo-interface: Consider error type that will be returned when DNS lookup fails or times out.
+    pub async fn build(self) -> Result<WrappedClient, WrapperClientBuilderError> {
         let ready_clients = Arc::new(RwLock::new(Vec::new()));
         let broken_endpoints = Arc::new(BrokenEndpoints::default());
+
+        let (initiated_send, initiated_recv) = channel();
+        let mut initiated_send = Some(initiated_send);
 
         let dns_lookup_task = {
             // Get shared ownership of the resources.
@@ -48,8 +55,6 @@ impl WrappedClientBuilder {
             tokio::spawn(async move {
                 let mut interval = interval(self.dns_interval);
                 loop {
-                    interval.tick().await;
-
                     // Resolve domain to IP addresses.
                     let addresses = (endpoint.domain(), 0)
                         .to_socket_addrs()
@@ -93,6 +98,12 @@ impl WrappedClientBuilder {
                     // Replace a list of clients stored in `ready_clients`` with the new ones constructed in `ready`.
                     let _ = replace(&mut *ready_clients.write().await, ready);
                     broken_endpoints.replace_with(broken);
+
+                    if let Some(initiated_send) = initiated_send.take() {
+                        let _ = initiated_send.send(());
+                    }
+
+                    interval.tick().await;
                 }
             })
         };
@@ -129,12 +140,19 @@ impl WrappedClientBuilder {
             })
         };
 
-        WrappedClient {
+        match initiated_recv.await {
+            Ok(_) => {}
+            Err(_) => {
+                return Err(WrapperClientBuilderError::FailedToInitiate);
+            }
+        }
+
+        Ok(WrappedClient {
             ready_clients,
             broken_endpoints,
             _dns_lookup_task: Arc::new(dns_lookup_task),
             _doctor_task: Arc::new(doctor_task),
-        }
+        })
     }
 }
 

@@ -1,5 +1,5 @@
-use auto_discovery::{WrappedClientBuilder as BaseBuilder, WrappedClient as Base};
 use auto_discovery::{EndpointTemplate, WrappedStatus, define_method};
+use auto_discovery::{WrappedClient as Base, WrappedClientBuilder as BaseBuilder};
 use std::net::IpAddr;
 use tonic::transport::Channel;
 
@@ -11,9 +11,9 @@ pub struct WrappedClient {
 }
 
 impl WrappedClient {
-    pub fn new(endpoint: EndpointTemplate) -> Self {
+    pub async fn new(endpoint: EndpointTemplate) -> Self {
         Self {
-            base: BaseBuilder::new(endpoint).build(),
+            base: BaseBuilder::new(endpoint).build().await.unwrap(),
         }
     }
 
