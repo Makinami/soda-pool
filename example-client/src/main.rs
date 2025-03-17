@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use auto_discovery::{CloneableRequest, EndpointTemplate};
+use auto_discovery::EndpointTemplate;
 use example_protobuf::WrappedClient;
 use tokio::{task::JoinSet, time::interval};
 use tracing::info;
@@ -18,10 +18,9 @@ async fn main() {
         let client = client.clone();
         set.spawn(async move {
             let mut interval = interval(Duration::from_millis(10000));
-            let request = CloneableRequest::new(());
             loop {
                 interval.tick().await;
-                let response = client.is_alive(request.clone()).await;
+                let response = client.is_alive(()).await;
                 match response {
                     Ok(r) => info!("Request successful: {:?}", r.into_inner().message),
                     Err(e) => info!("Request failed: {:?}", e),

@@ -142,13 +142,15 @@ macro_rules! define_method {
     ($client:ident, $name:ident, $request:ty, $response:ty) => {
         pub async fn $name(
             &self,
-            request: impl tonic::IntoRequest<$request> + Clone,
+            request: impl tonic::IntoRequest<$request>,
         ) -> Result<tonic::Response<$response>, WrappedStatus> {
+            let (metadata, extensions, message) = request.into_request().into_parts();
             loop {
                 // Get channel of random index.
                 let (ip_address, channel) = self.get_channel().await?;
 
-                let result = $client::new(channel).$name(request.clone()).await;
+                let request = tonic::Request::from_parts(metadata.clone(), extensions.clone(), message.clone());
+                let result = $client::new(channel).$name(request).await;
 
                 match result {
                     Ok(response) => {
