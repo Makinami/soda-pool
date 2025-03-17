@@ -9,7 +9,7 @@ use std::{
 use rand::Rng;
 use tokio::{sync::RwLock, task::JoinHandle, time::interval};
 use tonic::{Status, transport::Channel};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::{
     broken_endpoints::BrokenEndpoints, dns::ToSocketAddrs, endpoint_template::EndpointTemplate,
@@ -55,10 +55,27 @@ impl WrappedClient {
                     let mut ready = Vec::new();
                     let mut broken = BinaryHeap::new();
 
-                    // todo-performance: Look at the current endpoints to skip testing them again.
-                    // Note: Changing implementation from Mutex to RwLock made it much nicer,
-                    // but I still wonder about the performance implications of resting all endpoints each time we refresh DNS.
                     for address in addresses {
+                        // Skip if the address is already in ready_clients.
+                        if let Some(entry) = ready_clients
+                            .read()
+                            .await
+                            .iter()
+                            .find(|(e, _)| e == &address)
+                            .cloned()
+                        {
+                            trace!("Skipping {:?} as already ready", address);
+                            ready.push(entry);
+                            continue;
+                        }
+
+                        // Skip if the address is already in broken_endpoints.
+                        if let Some(entry) = broken_endpoints.get_entry(address) {
+                            trace!("Skipping {:?} as already broken", address);
+                            broken.push(entry);
+                            continue;
+                        }
+
                         debug!("Connecting to: {:?}", address);
                         let endpoint = endpoint.build(address);
                         let channel = endpoint.connect().await;
@@ -149,7 +166,11 @@ macro_rules! define_method {
                 // Get channel of random index.
                 let (ip_address, channel) = self.get_channel().await?;
 
-                let request = tonic::Request::from_parts(metadata.clone(), extensions.clone(), message.clone());
+                let request = tonic::Request::from_parts(
+                    metadata.clone(),
+                    extensions.clone(),
+                    message.clone(),
+                );
                 let result = $client::new(channel).$name(request).await;
 
                 match result {
