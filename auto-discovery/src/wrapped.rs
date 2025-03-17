@@ -15,23 +15,27 @@ use crate::{
     broken_endpoints::BrokenEndpoints, dns::ToSocketAddrs, endpoint_template::EndpointTemplate,
 };
 
-#[derive(Clone)]
-pub struct WrappedClient {
-    // todo-performance: Consider using another data structure for ready_clients.
-    // Vec was a first default choice because it's simple and easy to work with,
-    // but I haven't thought about other options yet.
-    ready_clients: Arc<RwLock<Vec<(IpAddr, Channel)>>>,
-    broken_endpoints: Arc<BrokenEndpoints>,
-
-    _dns_lookup_task: Arc<JoinHandle<()>>,
-    _doctor_task: Arc<JoinHandle<()>>,
+pub struct WrappedClientBuilder {
+    endpoint: EndpointTemplate,
+    dns_interval: Duration,
 }
 
-impl WrappedClient {
-    // todo-interface: Consider what parameters are necessary and how to best pass them.
-    // todo-interface: Return a function that won't resolve until first DNS lookup finishes.
+impl WrappedClientBuilder {
+    pub fn new(endpoint: EndpointTemplate) -> Self {
+        Self {
+            endpoint,
+            dns_interval: Duration::from_secs(5),
+        }
+    }
+
+    pub fn dns_interval(mut self, dns_interval: Duration) -> Self {
+        self.dns_interval = dns_interval;
+        self
+    }
+
+    // todo-interface: Return a future that won't resolve until first DNS lookup finishes.
     //                 This will prevent NoReadeChannels error from happening when user tries to call an API immediately after creating a client.
-    pub fn new(endpoint: EndpointTemplate, dns_interval: Duration) -> Self {
+    pub fn build(self) -> WrappedClient {
         let ready_clients = Arc::new(RwLock::new(Vec::new()));
         let broken_endpoints = Arc::new(BrokenEndpoints::default());
 
@@ -39,10 +43,10 @@ impl WrappedClient {
             // Get shared ownership of the resources.
             let ready_clients = ready_clients.clone();
             let broken_endpoints = broken_endpoints.clone();
-            let endpoint = endpoint.clone();
+            let endpoint = self.endpoint.clone();
 
             tokio::spawn(async move {
-                let mut interval = interval(dns_interval);
+                let mut interval = interval(self.dns_interval);
                 loop {
                     interval.tick().await;
 
@@ -109,7 +113,7 @@ impl WrappedClient {
                         continue;
                     };
 
-                    let connection_test_result = endpoint.build(ip_address).connect().await;
+                    let connection_test_result = self.endpoint.build(ip_address).connect().await;
 
                     if let Ok(channel) = connection_test_result {
                         info!("Connection established to {:?}", ip_address);
@@ -125,14 +129,28 @@ impl WrappedClient {
             })
         };
 
-        Self {
+        WrappedClient {
             ready_clients,
             broken_endpoints,
             _dns_lookup_task: Arc::new(dns_lookup_task),
             _doctor_task: Arc::new(doctor_task),
         }
     }
+}
 
+#[derive(Clone)]
+pub struct WrappedClient {
+    // todo-performance: Consider using another data structure for ready_clients.
+    // Vec was a first default choice because it's simple and easy to work with,
+    // but I haven't thought about other options yet.
+    ready_clients: Arc<RwLock<Vec<(IpAddr, Channel)>>>,
+    broken_endpoints: Arc<BrokenEndpoints>,
+
+    _dns_lookup_task: Arc<JoinHandle<()>>,
+    _doctor_task: Arc<JoinHandle<()>>,
+}
+
+impl WrappedClient {
     pub async fn get_channel(&self) -> Result<(IpAddr, Channel), WrappedStatus> {
         let read_access = self.ready_clients.read().await;
         if read_access.is_empty() {

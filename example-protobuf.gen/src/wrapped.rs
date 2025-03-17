@@ -1,6 +1,6 @@
-use auto_discovery::WrappedClient as Base;
+use auto_discovery::{WrappedClientBuilder as BaseBuilder, WrappedClient as Base};
 use auto_discovery::{EndpointTemplate, WrappedStatus, define_method};
-use std::{net::IpAddr, time::Duration};
+use std::net::IpAddr;
 use tonic::transport::Channel;
 
 use crate::health_client::HealthClient;
@@ -11,9 +11,9 @@ pub struct WrappedClient {
 }
 
 impl WrappedClient {
-    pub fn new(endpoint: EndpointTemplate, dns_interval: Duration) -> Self {
+    pub fn new(endpoint: EndpointTemplate) -> Self {
         Self {
-            base: Base::new(endpoint, dns_interval),
+            base: BaseBuilder::new(endpoint).build(),
         }
     }
 
