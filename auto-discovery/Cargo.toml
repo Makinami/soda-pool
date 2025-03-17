@@ -12,7 +12,9 @@ tracing = { workspace = true }
 url = { workspace = true }
 
 [features]
+default = ["tls"]
 mock-dns = []
+tls = ["tonic/tls"]
 
 [dev-dependencies]
 rstest = { workspace = true }

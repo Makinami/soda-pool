@@ -1,10 +1,11 @@
 use http::HeaderValue;
 use std::{net::IpAddr, str::FromStr, time::Duration};
+#[cfg(feature = "tls")]
+use tonic::transport::ClientTlsConfig;
 use tonic::transport::{Endpoint, Uri};
-use url::{Host, Url};
+use url::Host;
+pub use url::Url;
 
-// todo-interface: Different versions of tonic have slightly different API for Endpoint.
-// Decide on currently supported version and mach the model.
 #[derive(Debug, Clone)]
 pub struct EndpointTemplate {
     url: Url,
@@ -13,9 +14,8 @@ pub struct EndpointTemplate {
     concurrency_limit: Option<usize>,
     rate_limit: Option<(u64, Duration)>,
     timeout: Option<Duration>,
-    // Can't check this setter before calling build().
-    // Rarely used so let's ignore it for now.
-    // tls_config: Option<ClientTlsConfig>,
+    #[cfg(feature = "tls")]
+    tls_config: Option<ClientTlsConfig>,
     buffer_size: Option<usize>,
     init_stream_window_size: Option<u32>,
     init_connection_window_size: Option<u32>,
@@ -62,6 +62,8 @@ impl EndpointTemplate {
             origin: None,
             user_agent: None,
             timeout: None,
+            #[cfg(feature = "tls")]
+            tls_config: None,
             concurrency_limit: None,
             rate_limit: None,
             buffer_size: None,
@@ -99,6 +101,20 @@ impl EndpointTemplate {
             timeout: Some(dur),
             ..self
         }
+    }
+
+    #[cfg(feature = "tls")]
+    pub fn tls_config(self, tls_config: ClientTlsConfig) -> Result<Self, Error> {
+        // Make sure we'll be able to build the Endpoint using this ClientTlsConfig
+        let endpoint = self.build(std::net::Ipv4Addr::new(127, 0, 0, 1));
+        let _ = endpoint
+            .tls_config(tls_config.clone())
+            .map_err(|_| Error::TlsInvalidUrl)?;
+
+        Ok(Self {
+            tls_config: Some(tls_config),
+            ..self
+        })
     }
 
     pub fn connect_timeout(self, dur: Duration) -> Self {
@@ -202,6 +218,13 @@ impl EndpointTemplate {
             endpoint = endpoint.timeout(timeout)
         }
 
+        #[cfg(feature = "tls")]
+        if let Some(tls_config) = self.tls_config.clone() {
+            endpoint = endpoint
+                .tls_config(tls_config)
+                .expect("already checked in the setter");
+        }
+
         if let Some(connect_timeout) = self.connect_timeout {
             endpoint = endpoint.connect_timeout(connect_timeout)
         }
@@ -270,6 +293,16 @@ pub enum Error {
     AlreadyIpAddress,
     Inconvertible,
     InvalidUserAgent,
+    #[cfg(feature = "tls")]
+    TlsInvalidUrl,
+}
+
+impl TryFrom<Url> for EndpointTemplate {
+    type Error = Error;
+
+    fn try_from(url: Url) -> Result<Self, Self::Error> {
+        Self::new(url)
+    }
 }
 
 #[cfg(test)]
