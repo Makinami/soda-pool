@@ -1,4 +1,4 @@
-use std::{collections::BinaryHeap, mem::replace, net::IpAddr, sync::Arc, time::Duration};
+use std::{collections::BinaryHeap, error::Error, mem::replace, net::IpAddr, sync::Arc, time::Duration};
 
 use chrono::Utc;
 use rand::Rng;
@@ -168,11 +168,11 @@ pub struct WrappedClient {
 }
 
 impl WrappedClient {
-    pub async fn get_channel(&self) -> Result<(IpAddr, Channel), WrappedStatus> {
+    pub async fn get_channel(&self) -> Result<(IpAddr, Channel), WrappedClientError> {
         let read_access = self.ready_clients.read().await;
         if read_access.is_empty() {
             // If there are no healthy channels, maybe we could trigger DNS lookup from here?
-            return Err(WrappedStatus::NoReadyChannels);
+            return Err(WrappedClientError::NoReadyChannels);
         }
         // If we keep track of what channels are currently being used, we could better load balance them.
         let index = rand::rng().random_range(0..read_access.len());
@@ -195,7 +195,7 @@ macro_rules! define_method {
         pub async fn $name(
             &self,
             request: impl tonic::IntoRequest<$request>,
-        ) -> Result<tonic::Response<$response>, WrappedStatus> {
+        ) -> Result<tonic::Response<$response>, tonic::Status> {
             let (metadata, extensions, message) = request.into_request().into_parts();
             loop {
                 // Get channel of random index.
@@ -231,13 +231,30 @@ macro_rules! define_method {
 
 // todo-interface: In general take care of error handling. This is just a quick draft.
 #[derive(Debug)]
-pub enum WrappedStatus {
-    Status(tonic::Status),
+pub enum WrappedClientError {
     NoReadyChannels,
 }
 
-impl From<Status> for WrappedStatus {
-    fn from(e: Status) -> Self {
-        WrappedStatus::Status(e)
+impl std::fmt::Display for WrappedClientError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WrappedClientError::NoReadyChannels => {
+                std::fmt::Display::fmt("No ready channels", f)
+            },
+        }
+    }
+}
+
+impl Error for WrappedClientError {}
+
+impl From<WrappedClientError> for Status {
+    fn from(e: WrappedClientError) -> Self {
+        match e {
+            WrappedClientError::NoReadyChannels => {
+                let mut status = Status::new(tonic::Code::Unavailable, "No ready channels");
+                status.set_source(Arc::new(e));
+                status
+            },
+        }
     }
 }
