@@ -65,6 +65,8 @@ pub fn grpc_client(c: &mut Criterion) {
     }
 
     group.finish();
+
+    runner.shutdown_background();
 }
 
 fn grpc_connection(c: &mut Criterion) {
@@ -83,6 +85,8 @@ fn grpc_connection(c: &mut Criterion) {
     });
 
     group.finish();
+
+    runner.shutdown_background();
 }
 
 criterion_group!(benches, grpc_client, grpc_connection);
