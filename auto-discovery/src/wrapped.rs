@@ -28,7 +28,7 @@ impl WrappedClientBuilder {
     pub fn new(endpoint: EndpointTemplate) -> Self {
         Self {
             endpoint,
-            // todo-interface: Is this a good default?
+            // Note: Is this a good default?
             dns_interval: Duration::from_secs(5),
         }
     }
@@ -229,7 +229,55 @@ macro_rules! define_method {
     };
 }
 
-// todo-interface: In general take care of error handling. This is just a quick draft.
+#[macro_export]
+macro_rules! define_client {
+    ($client_type:ident) => {
+        #[derive(Clone)]
+        pub struct $client_type {
+            base: $crate::WrappedClient,
+        }
+
+        impl $client_type {
+            pub async fn new(endpoint: $crate::EndpointTemplate) -> Self {
+                Self {
+                    base: $crate::WrappedClientBuilder::new(endpoint).build().await.unwrap(),
+                }
+            }
+
+            async fn get_channel(&self) -> Result<(std::net::IpAddr, tonic::transport::Channel), $crate::WrappedClientError> {
+                self.base.get_channel().await
+            }
+
+            async fn report_broken(&self, ip_address: std::net::IpAddr) {
+                self.base.report_broken(ip_address).await
+            }
+        }
+
+        impl From<$crate::WrappedClient> for $client_type {
+            fn from(base: $crate::WrappedClient) -> Self {
+                Self { base }
+            }
+        }
+    };
+    (
+        $client_type:ident, $original_client:ident, $(($name:ident, $request:ty, $response:ty)),+ $(,)?) => {
+        define_client!($client_type);
+        impl $client_type {
+            $(
+                define_method!($original_client, $name, $request, $response);
+            )+
+        }
+    };
+    ($client_type:ident, $(($original_client:ident, $name:ident, $request:ty, $response:ty)),+) => {
+        define_client!($client_type);
+        impl $client_type {
+            $(
+                define_method!($original_client, $name, $request, $response);
+            )+
+        }
+    };
+}
+
 #[derive(Debug)]
 pub enum WrappedClientError {
     NoReadyChannels,
