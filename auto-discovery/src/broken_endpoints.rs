@@ -1,11 +1,11 @@
 use std::{
-    cmp::min, collections::BinaryHeap, mem::replace, net::IpAddr, sync::Mutex, time::Duration,
+    cmp::min, collections::BinaryHeap, mem::replace, net::IpAddr, sync::Mutex, time::Duration
 };
 
 use chrono::{DateTime, Timelike, Utc};
 
 // todo-interface: Wrap the DateTime<Utc> here to abstract failed count.
-type DelayedAddress = (DateTime<Utc>, IpAddr);
+type DelayedAddress = (BackoffTracker, IpAddr);
 
 // Implementation using RwLock should be much nicer, but RwLock doesn't support CondVar.
 // Although untested, my current assumption is that broken endpoints will be rare enough
@@ -38,9 +38,12 @@ impl BrokenEndpoints {
     }
 
     // todo-performance: Implement a proper backoff strategy.
-    pub(crate) fn add_address(&self, address: IpAddr, failed_times: u16) {
-        let next_test_time = Utc::now() + Duration::from_secs(1);
-        let next_test_time = set_retires(next_test_time, failed_times);
+    pub(crate) fn add_address(&self, address: IpAddr) {
+        self.add_address_with_backoff(address, BackoffTracker::from_failed_times(0));
+    }
+
+    pub(crate) fn add_address_with_backoff(&self, address: IpAddr, last_backoff: BackoffTracker) {
+        let next_test_time = BackoffTracker::from_failed_times(last_backoff.failed_times() + 1);
         self.addresses
             .lock()
             .unwrap()
@@ -54,14 +57,14 @@ impl BrokenEndpoints {
     pub(crate) fn next_broken_ip_address(
         &self,
         max_wait_duration: Duration,
-    ) -> Option<(IpAddr, u16)> {
+    ) -> Option<(IpAddr, BackoffTracker)> {
         let max_end_wait = Utc::now() + max_wait_duration;
         loop {
             let mut guard = self.addresses.lock().unwrap();
             let now = Utc::now();
             if let Some((instant, _)) = guard.peek() {
-                if now < *instant {
-                    let durr = (*instant - now)
+                if now < instant.next_test_time() {
+                    let durr = (instant.next_test_time() - now)
                         .to_std()
                         .expect("behind an if check, so cannot fail");
                     let result = self
@@ -73,7 +76,7 @@ impl BrokenEndpoints {
                     }
                 } else {
                     let entry = guard.pop().unwrap();
-                    return Some((entry.1, get_retires(entry.0)));
+                    return Some((entry.1, entry.0));
                 }
             } else if now < max_end_wait {
                 let dur = (max_end_wait - now)
@@ -90,6 +93,26 @@ impl BrokenEndpoints {
                 return None;
             }
         }
+    }
+}
+
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub(crate) struct BackoffTracker(DateTime<Utc>);
+
+impl BackoffTracker {
+    // todo-performance: Implement a proper backoff strategy.
+    pub fn from_failed_times(failed_times: u16) -> Self {
+        let timestamp = Utc::now() + Duration::from_secs(1);
+        BackoffTracker(set_retires(timestamp, failed_times))
+    }
+
+    pub fn next_test_time(&self) -> DateTime<Utc> {
+        self.0
+    }
+
+    pub fn failed_times(&self) -> u16 {
+        get_retires(self.0)
     }
 }
 

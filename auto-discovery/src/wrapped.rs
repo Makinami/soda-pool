@@ -91,7 +91,7 @@ impl WrappedClientBuilder {
                         if let Ok(channel) = channel {
                             ready.push((address, channel));
                         } else {
-                            broken.push((Utc::now() + Duration::from_secs(1), address));
+                            broken.push((BackoffTracker::from_failed_times(1), address));
                         }
                     }
 
@@ -118,7 +118,7 @@ impl WrappedClientBuilder {
                 loop {
                     // todo-performance: block_in_place is not the best solution here. It will prevent further tasks from being scheduled on the current thread,
                     // but may block the ones already scheduled. It's ok for now for testing but should be avoided in production.
-                    let Some((ip_address, failed_time)) = tokio::task::block_in_place(|| {
+                    let Some((ip_address, backoff)) = tokio::task::block_in_place(|| {
                         broken_endpoints.next_broken_ip_address(wait_duration)
                     }) else {
                         continue;
@@ -133,7 +133,7 @@ impl WrappedClientBuilder {
                         ready_clients.write().await.push((ip_address, channel));
                     } else {
                         warn!("Can't connect to {:?}", ip_address);
-                        broken_endpoints.add_address(ip_address, failed_time + 1);
+                        broken_endpoints.add_address_with_backoff(ip_address, backoff);
                     }
                 }
             })
@@ -185,7 +185,7 @@ impl WrappedClient {
         if let Some(index) = index {
             write_access.remove(index);
         }
-        self.broken_endpoints.add_address(ip_address, 1);
+        self.broken_endpoints.add_address(ip_address);
     }
 }
 
