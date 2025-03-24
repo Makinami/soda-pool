@@ -6,7 +6,6 @@ pub use std::net::ToSocketAddrs;
 #[cfg(any(test, feature = "mock-dns"))]
 pub use mock_net::ToSocketAddrs;
 
-#[allow(dead_code)]
 pub fn resolve_domain(domain: &str) -> Result<impl Iterator<Item = IpAddr>> {
     Ok((domain, 0).to_socket_addrs()?.map(|addr| addr.ip()))
 }

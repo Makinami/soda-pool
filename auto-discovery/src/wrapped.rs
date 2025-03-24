@@ -1,6 +1,5 @@
 use std::{collections::BinaryHeap, error::Error, mem::replace, net::IpAddr, sync::Arc, time::Duration};
 
-use chrono::Utc;
 use rand::Rng;
 use tokio::{
     sync::{RwLock, oneshot::channel},
@@ -11,7 +10,7 @@ use tonic::{Status, transport::Channel};
 use tracing::{debug, info, trace, warn};
 
 use crate::{
-    broken_endpoints::BrokenEndpoints, dns::ToSocketAddrs, endpoint_template::EndpointTemplate,
+    broken_endpoints::{BackoffTracker, BrokenEndpoints}, dns::resolve_domain, endpoint_template::EndpointTemplate,
 };
 
 pub struct WrappedClientBuilder {
@@ -56,10 +55,8 @@ impl WrappedClientBuilder {
                 let mut interval = interval(self.dns_interval);
                 loop {
                     // Resolve domain to IP addresses.
-                    let addresses = (endpoint.domain(), 0)
-                        .to_socket_addrs()
-                        .unwrap()
-                        .map(|addr| addr.ip());
+                    let addresses = resolve_domain(endpoint.domain())
+                        .unwrap();
 
                     let mut ready = Vec::new();
                     let mut broken = BinaryHeap::new();
