@@ -76,7 +76,7 @@ impl WrappedClientBuilder {
                         }
 
                         // Skip if the address is already in broken_endpoints.
-                        if let Some(entry) = broken_endpoints.get_entry(address) {
+                        if let Some(entry) = broken_endpoints.get_entry(address).unwrap() {
                             trace!("Skipping {:?} as already broken", address);
                             broken.push(entry);
                             continue;
@@ -117,7 +117,7 @@ impl WrappedClientBuilder {
                     // but may block the ones already scheduled. It's ok for now for testing but should be avoided in production.
                     let Some((ip_address, backoff)) = tokio::task::block_in_place(|| {
                         broken_endpoints.next_broken_ip_address(wait_duration)
-                    }) else {
+                    }).unwrap() else {
                         continue;
                     };
 
@@ -280,6 +280,7 @@ macro_rules! define_client {
 #[derive(Debug)]
 pub enum WrappedClientError {
     NoReadyChannels,
+    BrokenLock,
 }
 
 impl std::fmt::Display for WrappedClientError {
@@ -287,6 +288,9 @@ impl std::fmt::Display for WrappedClientError {
         match self {
             WrappedClientError::NoReadyChannels => {
                 std::fmt::Display::fmt("No ready channels", f)
+            },
+            WrappedClientError::BrokenLock => {
+                std::fmt::Display::fmt("Broken lock", f)
             },
         }
     }
@@ -299,6 +303,11 @@ impl From<WrappedClientError> for Status {
         match e {
             WrappedClientError::NoReadyChannels => {
                 let mut status = Status::new(tonic::Code::Unavailable, "No ready channels");
+                status.set_source(Arc::new(e));
+                status
+            },
+            WrappedClientError::BrokenLock => {
+                let mut status = Status::new(tonic::Code::Internal, "Broken lock");
                 status.set_source(Arc::new(e));
                 status
             },
