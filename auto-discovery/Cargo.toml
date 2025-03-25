@@ -20,4 +20,4 @@ tls = ["tonic/tls"]
 rstest = { workspace = true }
 
 [lints.clippy]
-unwrap_used = { level = "deny", allow-unwrap-in-tests = true }
+unwrap_used = "deny"

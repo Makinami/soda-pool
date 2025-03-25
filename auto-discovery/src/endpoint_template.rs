@@ -209,9 +209,7 @@ impl EndpointTemplate {
         }
 
         if let Some(user_agent) = self.user_agent.clone() {
-            // user_agent is already of the correct type so this will never
-            // return an error.
-            endpoint = endpoint.user_agent(user_agent).unwrap();
+            endpoint = endpoint.user_agent(user_agent).expect("already checked in the setter");
         }
 
         if let Some(timeout) = self.timeout {
@@ -273,17 +271,15 @@ impl EndpointTemplate {
     }
 
     pub fn domain(&self) -> &str {
-        // Unwrap is safe as we are making sure Url contains a domain in the
-        // constructor.
-        self.url.domain().unwrap()
+        self.url.domain().expect("already checked in the constructor")
     }
 
     fn build_uri(&self, ip_addr: IpAddr) -> Uri {
         // We make sure this conversion doesn't return any errors in Self::new
         // already so it's safe to unwrap here.
         let mut url = self.url.clone();
-        url.set_ip_host(ip_addr).unwrap();
-        Uri::from_str(url.as_str()).unwrap()
+        url.set_ip_host(ip_addr).expect("already checked in the constructor by trying cannot_be_a_base");
+        Uri::from_str(url.as_str()).expect("starting from Url, this should always be a valid Uri")
     }
 }
 

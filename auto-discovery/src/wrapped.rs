@@ -10,7 +10,7 @@ use tonic::{Status, transport::Channel};
 use tracing::{debug, info, trace, warn};
 
 use crate::{
-    broken_endpoints::{BackoffTracker, BrokenEndpoints}, dns::resolve_domain, endpoint_template::EndpointTemplate,
+    broken_endpoints::{BackoffTracker, BrokenEndpoints, BrokenEndpointsError}, dns::resolve_domain, endpoint_template::EndpointTemplate,
 };
 
 pub struct WrappedClientBuilder {
@@ -94,7 +94,7 @@ impl WrappedClientBuilder {
 
                     // Replace a list of clients stored in `ready_clients`` with the new ones constructed in `ready`.
                     let _ = replace(&mut *ready_clients.write().await, ready);
-                    broken_endpoints.replace_with(broken);
+                    broken_endpoints.replace_with(broken).unwrap();
 
                     if let Some(initiated_send) = initiated_send.take() {
                         let _ = initiated_send.send(());
@@ -130,7 +130,7 @@ impl WrappedClientBuilder {
                         ready_clients.write().await.push((ip_address, channel));
                     } else {
                         warn!("Can't connect to {:?}", ip_address);
-                        broken_endpoints.add_address_with_backoff(ip_address, backoff);
+                        broken_endpoints.add_address_with_backoff(ip_address, backoff).unwrap();
                     }
                 }
             })
@@ -178,13 +178,13 @@ impl WrappedClient {
         Ok(read_access[index].clone())
     }
 
-    pub async fn report_broken(&self, ip_address: IpAddr) {
+    pub async fn report_broken(&self, ip_address: IpAddr) -> Result<(), WrappedClientError> {
         let mut write_access = self.ready_clients.write().await;
         let index = write_access.iter().position(|(e, _)| e == &ip_address);
         if let Some(index) = index {
             write_access.remove(index);
         }
-        self.broken_endpoints.add_address(ip_address);
+        self.broken_endpoints.add_address(ip_address).map_err(From::from)
     }
 }
 
@@ -247,7 +247,7 @@ macro_rules! define_client {
                 self.base.get_channel().await
             }
 
-            async fn report_broken(&self, ip_address: std::net::IpAddr) {
+            async fn report_broken(&self, ip_address: std::net::IpAddr) -> Result<(), $crate::WrappedClientError> {
                 self.base.report_broken(ip_address).await
             }
         }
@@ -281,6 +281,12 @@ macro_rules! define_client {
 pub enum WrappedClientError {
     NoReadyChannels,
     BrokenLock,
+}
+
+impl From<BrokenEndpointsError> for WrappedClientError {
+    fn from(_: BrokenEndpointsError) -> Self {
+        WrappedClientError::BrokenLock
+    }
 }
 
 impl std::fmt::Display for WrappedClientError {
