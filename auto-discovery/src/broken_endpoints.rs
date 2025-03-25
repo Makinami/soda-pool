@@ -4,7 +4,6 @@ use std::{
 
 use chrono::{DateTime, Timelike, Utc};
 
-// todo-interface: Wrap the DateTime<Utc> here to abstract failed count.
 type DelayedAddress = (BackoffTracker, IpAddr);
 
 // Implementation using RwLock should be much nicer, but RwLock doesn't support CondVar.
@@ -37,9 +36,8 @@ impl BrokenEndpoints {
         guard.iter().find(|(_, addr)| *addr == address).cloned()
     }
 
-    // todo-performance: Implement a proper backoff strategy.
     pub(crate) fn add_address(&self, address: IpAddr) {
-        self.add_address_with_backoff(address, BackoffTracker::from_failed_times(0));
+        self.add_address_with_backoff(address, BackoffTracker::from_failed_times(1));
     }
 
     pub(crate) fn add_address_with_backoff(&self, address: IpAddr, last_backoff: BackoffTracker) {
@@ -101,9 +99,8 @@ impl BrokenEndpoints {
 pub(crate) struct BackoffTracker(DateTime<Utc>);
 
 impl BackoffTracker {
-    // todo-performance: Implement a proper backoff strategy.
     pub fn from_failed_times(failed_times: u16) -> Self {
-        let timestamp = Utc::now() + Duration::from_secs(1);
+        let timestamp = Utc::now() + calculate_backoff(failed_times);
         BackoffTracker(set_retires(timestamp, failed_times))
     }
 
@@ -116,8 +113,19 @@ impl BackoffTracker {
     }
 }
 
+// Note: The backoff strategy is very simple and might be inefficient.
+// It's just a placeholder for a more sophisticated strategy.
+// The current strategy is to wait 2^(failed_times-1) seconds before retrying.
+// The maximum wait time is 2^9 = 512 seconds (~9 minutes).
+fn calculate_backoff(failed_times: u16) -> Duration {
+    let failed_times = min(failed_times - 1, 9);
+    Duration::from_secs(2u64.pow(failed_times as u32))
+}
+
 fn set_retires(timestamp: DateTime<Utc>, failed_times: u16) -> DateTime<Utc> {
     let failed_times = min(failed_times, 0xFF);
+    // The last byte of the nanoseconds field is used to store the number of failed times.
+    // To make sure we do not go above the maximum nanoseconds value (2_000_000_000), we subtract 0x100.
     let nanos = (timestamp.nanosecond() & 0xFFFFFF00 | failed_times as u32) - 0x100;
     timestamp
         .with_nanosecond(nanos)

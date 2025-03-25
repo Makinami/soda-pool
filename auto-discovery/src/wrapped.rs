@@ -169,6 +169,8 @@ impl WrappedClient {
         let read_access = self.ready_clients.read().await;
         if read_access.is_empty() {
             // If there are no healthy channels, maybe we could trigger DNS lookup from here?
+            // todo- correctness: There is a chance, that due to a long backoff, there actually already exists a healthy channel,
+            // but we are not aware of it. We should probably check if there are any broken endpoints and try to connect to them.
             return Err(WrappedClientError::NoReadyChannels);
         }
         // If we keep track of what channels are currently being used, we could better load balance them.
