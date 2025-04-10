@@ -6,7 +6,9 @@ edition = { workspace = true }
 [dependencies]
 http = { workspace = true }
 rand = { workspace = true }
-tokio = { workspace = true }
+# todo-correctness: requiring tr-multi-thread ? Do I need a runtime checks in blocking code?
+tokio = { workspace = true, features = ["rt-multi-thread"]}
+tokio-util = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }

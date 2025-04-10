@@ -1,4 +1,6 @@
-use std::{collections::BinaryHeap, error::Error, mem::replace, net::IpAddr, sync::Arc, time::Duration};
+use std::{
+    collections::BinaryHeap, error::Error, mem::replace, net::IpAddr, sync::Arc, time::Duration,
+};
 
 use rand::Rng;
 use tokio::{
@@ -6,11 +8,14 @@ use tokio::{
     task::JoinHandle,
     time::interval,
 };
+use tokio_util::sync::{CancellationToken, DropGuard};
 use tonic::{Status, transport::Channel};
 use tracing::{debug, info, trace, warn};
 
 use crate::{
-    broken_endpoints::{BackoffTracker, BrokenEndpoints, BrokenEndpointsError}, dns::resolve_domain, endpoint_template::EndpointTemplate,
+    broken_endpoints::{BackoffTracker, BrokenEndpoints, BrokenEndpointsError},
+    dns::resolve_domain,
+    endpoint_template::EndpointTemplate,
 };
 
 pub struct WrappedClientBuilder {
@@ -41,6 +46,7 @@ impl WrappedClientBuilder {
     pub async fn build(self) -> Result<WrappedClient, WrapperClientBuilderError> {
         let ready_clients = Arc::new(RwLock::new(Vec::new()));
         let broken_endpoints = Arc::new(BrokenEndpoints::default());
+        let ct = CancellationToken::new();
 
         let (initiated_send, initiated_recv) = channel();
         let mut initiated_send = Some(initiated_send);
@@ -50,57 +56,26 @@ impl WrappedClientBuilder {
             let ready_clients = ready_clients.clone();
             let broken_endpoints = broken_endpoints.clone();
             let endpoint = self.endpoint.clone();
+            let ct = ct.clone();
 
             tokio::spawn(async move {
                 let mut interval = interval(self.dns_interval);
                 loop {
-                    // Resolve domain to IP addresses.
-                    let addresses = resolve_domain(endpoint.domain())
-                        .unwrap();
-
-                    let mut ready = Vec::new();
-                    let mut broken = BinaryHeap::new();
-
-                    for address in addresses {
-                        // Skip if the address is already in ready_clients.
-                        if let Some(entry) = ready_clients
-                            .read()
-                            .await
-                            .iter()
-                            .find(|(e, _)| e == &address)
-                            .cloned()
-                        {
-                            trace!("Skipping {:?} as already ready", address);
-                            ready.push(entry);
-                            continue;
-                        }
-
-                        // Skip if the address is already in broken_endpoints.
-                        if let Some(entry) = broken_endpoints.get_entry(address).unwrap() {
-                            trace!("Skipping {:?} as already broken", address);
-                            broken.push(entry);
-                            continue;
-                        }
-
-                        debug!("Connecting to: {:?}", address);
-                        let endpoint = endpoint.build(address);
-                        let channel = endpoint.connect().await;
-                        if let Ok(channel) = channel {
-                            ready.push((address, channel));
-                        } else {
-                            broken.push((BackoffTracker::from_failed_times(1), address));
-                        }
-                    }
-
-                    // Replace a list of clients stored in `ready_clients`` with the new ones constructed in `ready`.
-                    let _ = replace(&mut *ready_clients.write().await, ready);
-                    broken_endpoints.replace_with(broken).unwrap();
+                    ct
+                        .run_until_cancelled(check_dns(
+                            &endpoint,
+                            &ready_clients,
+                            &broken_endpoints,
+                        ))
+                        .await;
 
                     if let Some(initiated_send) = initiated_send.take() {
                         let _ = initiated_send.send(());
                     }
 
-                    interval.tick().await;
+                    ct
+                        .run_until_cancelled(interval.tick())
+                        .await;
                 }
             })
         };
@@ -117,7 +92,8 @@ impl WrappedClientBuilder {
                     // but may block the ones already scheduled. It's ok for now for testing but should be avoided in production.
                     let Some((ip_address, backoff)) = tokio::task::block_in_place(|| {
                         broken_endpoints.next_broken_ip_address(wait_duration)
-                    }).unwrap() else {
+                    })
+                    .unwrap() else {
                         continue;
                     };
 
@@ -130,7 +106,9 @@ impl WrappedClientBuilder {
                         ready_clients.write().await.push((ip_address, channel));
                     } else {
                         warn!("Can't connect to {:?}", ip_address);
-                        broken_endpoints.add_address_with_backoff(ip_address, backoff).unwrap();
+                        broken_endpoints
+                            .add_address_with_backoff(ip_address, backoff)
+                            .unwrap();
                     }
                 }
             })
@@ -148,8 +126,56 @@ impl WrappedClientBuilder {
             broken_endpoints,
             _dns_lookup_task: Arc::new(dns_lookup_task),
             _doctor_task: Arc::new(doctor_task),
+            _drop_guard: Arc::new(ct.drop_guard()),
         })
     }
+}
+
+async fn check_dns(
+    endpoint: &EndpointTemplate,
+    ready_clients: &RwLock<Vec<(IpAddr, Channel)>>,
+    broken_endpoints: &BrokenEndpoints,
+) {
+    // Resolve domain to IP addresses.
+    let addresses = resolve_domain(endpoint.domain()).unwrap();
+
+    let mut ready = Vec::new();
+    let mut broken = BinaryHeap::new();
+
+    for address in addresses {
+        // Skip if the address is already in ready_clients.
+        if let Some(entry) = ready_clients
+            .read()
+            .await
+            .iter()
+            .find(|(e, _)| e == &address)
+            .cloned()
+        {
+            trace!("Skipping {:?} as already ready", address);
+            ready.push(entry);
+            continue;
+        }
+
+        // Skip if the address is already in broken_endpoints.
+        if let Some(entry) = broken_endpoints.get_entry(address).unwrap() {
+            trace!("Skipping {:?} as already broken", address);
+            broken.push(entry);
+            continue;
+        }
+
+        debug!("Connecting to: {:?}", address);
+        let endpoint = endpoint.build(address);
+        let channel = endpoint.connect().await;
+        if let Ok(channel) = channel {
+            ready.push((address, channel));
+        } else {
+            broken.push((BackoffTracker::from_failed_times(1), address));
+        }
+    }
+
+    // Replace a list of clients stored in `ready_clients`` with the new ones constructed in `ready`.
+    let _ = replace(&mut *ready_clients.write().await, ready);
+    broken_endpoints.replace_with(broken).unwrap();
 }
 
 #[derive(Clone)]
@@ -162,6 +188,7 @@ pub struct WrappedClient {
 
     _dns_lookup_task: Arc<JoinHandle<()>>,
     _doctor_task: Arc<JoinHandle<()>>,
+    _drop_guard: Arc<DropGuard>,
 }
 
 impl WrappedClient {
@@ -184,7 +211,9 @@ impl WrappedClient {
         if let Some(index) = index {
             write_access.remove(index);
         }
-        self.broken_endpoints.add_address(ip_address).map_err(From::from)
+        self.broken_endpoints
+            .add_address(ip_address)
+            .map_err(From::from)
     }
 }
 
@@ -292,12 +321,8 @@ impl From<BrokenEndpointsError> for WrappedClientError {
 impl std::fmt::Display for WrappedClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            WrappedClientError::NoReadyChannels => {
-                std::fmt::Display::fmt("No ready channels", f)
-            },
-            WrappedClientError::BrokenLock => {
-                std::fmt::Display::fmt("Broken lock", f)
-            },
+            WrappedClientError::NoReadyChannels => std::fmt::Display::fmt("No ready channels", f),
+            WrappedClientError::BrokenLock => std::fmt::Display::fmt("Broken lock", f),
         }
     }
 }
@@ -311,12 +336,12 @@ impl From<WrappedClientError> for Status {
                 let mut status = Status::new(tonic::Code::Unavailable, "No ready channels");
                 status.set_source(Arc::new(e));
                 status
-            },
+            }
             WrappedClientError::BrokenLock => {
                 let mut status = Status::new(tonic::Code::Internal, "Broken lock");
                 status.set_source(Arc::new(e));
                 status
-            },
+            }
         }
     }
 }
