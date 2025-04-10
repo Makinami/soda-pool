@@ -7,6 +7,5 @@ edition = { workspace = true }
 http = { workspace = true }
 prost = { workspace = true }
 tonic = { workspace = true }
-tower = { workspace = true }
 
 auto-discovery = { path = "../auto-discovery" }

@@ -1,6 +1,6 @@
 use http::HeaderValue;
 use std::{net::IpAddr, str::FromStr, time::Duration};
-#[cfg(feature = "tls")]
+#[cfg(feature = "_tls-any")]
 use tonic::transport::ClientTlsConfig;
 use tonic::transport::{Endpoint, Uri};
 use url::Host;
@@ -14,7 +14,7 @@ pub struct EndpointTemplate {
     concurrency_limit: Option<usize>,
     rate_limit: Option<(u64, Duration)>,
     timeout: Option<Duration>,
-    #[cfg(feature = "tls")]
+    #[cfg(feature = "_tls-any")]
     tls_config: Option<ClientTlsConfig>,
     buffer_size: Option<usize>,
     init_stream_window_size: Option<u32>,
@@ -62,7 +62,7 @@ impl EndpointTemplate {
             origin: None,
             user_agent: None,
             timeout: None,
-            #[cfg(feature = "tls")]
+            #[cfg(feature = "_tls-any")]
             tls_config: None,
             concurrency_limit: None,
             rate_limit: None,
@@ -103,7 +103,7 @@ impl EndpointTemplate {
         }
     }
 
-    #[cfg(feature = "tls")]
+    #[cfg(feature = "_tls-any")]
     pub fn tls_config(self, tls_config: ClientTlsConfig) -> Result<Self, Error> {
         // Make sure we'll be able to build the Endpoint using this ClientTlsConfig
         let endpoint = self.build(std::net::Ipv4Addr::new(127, 0, 0, 1));
@@ -209,14 +209,16 @@ impl EndpointTemplate {
         }
 
         if let Some(user_agent) = self.user_agent.clone() {
-            endpoint = endpoint.user_agent(user_agent).expect("already checked in the setter");
+            endpoint = endpoint
+                .user_agent(user_agent)
+                .expect("already checked in the setter");
         }
 
         if let Some(timeout) = self.timeout {
             endpoint = endpoint.timeout(timeout)
         }
 
-        #[cfg(feature = "tls")]
+        #[cfg(feature = "_tls-any")]
         if let Some(tls_config) = self.tls_config.clone() {
             endpoint = endpoint
                 .tls_config(tls_config)
@@ -271,14 +273,17 @@ impl EndpointTemplate {
     }
 
     pub fn domain(&self) -> &str {
-        self.url.domain().expect("already checked in the constructor")
+        self.url
+            .domain()
+            .expect("already checked in the constructor")
     }
 
     fn build_uri(&self, ip_addr: IpAddr) -> Uri {
         // We make sure this conversion doesn't return any errors in Self::new
         // already so it's safe to unwrap here.
         let mut url = self.url.clone();
-        url.set_ip_host(ip_addr).expect("already checked in the constructor by trying cannot_be_a_base");
+        url.set_ip_host(ip_addr)
+            .expect("already checked in the constructor by trying cannot_be_a_base");
         Uri::from_str(url.as_str()).expect("starting from Url, this should always be a valid Uri")
     }
 }
@@ -289,7 +294,7 @@ pub enum Error {
     AlreadyIpAddress,
     Inconvertible,
     InvalidUserAgent,
-    #[cfg(feature = "tls")]
+    #[cfg(feature = "_tls-any")]
     TlsInvalidUrl,
 }
 

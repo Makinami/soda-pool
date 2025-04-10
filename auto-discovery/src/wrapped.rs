@@ -4,7 +4,7 @@ use std::{
 
 use rand::Rng;
 use tokio::{
-    sync::{oneshot::channel, RwLock},
+    sync::{RwLock, oneshot::channel},
     task::{AbortHandle, JoinHandle},
     time::interval,
 };
@@ -69,7 +69,11 @@ impl WrappedClientBuilder {
             })
         };
 
-        let doctor_task = tokio::spawn(recheck_broken_endpoint(self.endpoint.clone(), ready_clients.clone(), broken_endpoints.clone()));
+        let doctor_task = tokio::spawn(recheck_broken_endpoint(
+            self.endpoint.clone(),
+            ready_clients.clone(),
+            broken_endpoints.clone(),
+        ));
 
         match initiated_recv.await {
             Ok(_) => {}
@@ -149,7 +153,8 @@ async fn recheck_broken_endpoint(
             ready_clients.write().await.push((ip_address, channel));
         } else {
             warn!("Can't connect to {:?}", ip_address);
-            broken_endpoints.add_address_with_backoff(ip_address, backoff)
+            broken_endpoints
+                .add_address_with_backoff(ip_address, backoff)
                 .await
                 .unwrap();
         }

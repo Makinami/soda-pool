@@ -16,7 +16,13 @@ chrono = { workspace = true }
 
 [features]
 mock-dns = []
-tls = ["tonic/tls"]
+
+# These features mirror tonic features
+_tls-any = [] # Internal. Please choose one of `tls-ring` or `tls-aws-lc`
+tls-ring = ["_tls-any", "tonic/tls-ring"]
+tls-aws-lc = ["_tls-any", "tonic/tls-aws-lc"]
+tls-native-roots = ["_tls-any", "tonic/tls-native-roots"]
+tls-webpki-roots = ["_tls-any", "tonic/tls-webpki-roots"]
 
 [dev-dependencies]
 rstest = { workspace = true }

@@ -12,8 +12,7 @@ example-protobuf = { path = "../example-protobuf.gen" }
 url = { workspace = true }
 auto-discovery = { path = "../auto-discovery" }
 tonic = { workspace = true }
-tower = { workspace = true }
-futures = "0.3"
+futures = { workspace = true }
 
 [[bench]]
 name = "bench"
