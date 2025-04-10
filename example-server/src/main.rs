@@ -76,7 +76,7 @@ async fn main() {
     while {
         print!("> ");
         let _ = std::io::stdout().flush();
-        std::io::stdin().read_line(&mut input).is_ok()
+        std::io::stdin().read_line(&mut input).unwrap_or(0) > 0
     } {
         match input.trim() {
             "exit" => break,
@@ -108,6 +108,12 @@ async fn main() {
                 }
                 if tasks.is_empty() {
                     println!("No servers running");
+                }
+            }
+            "loop" => {
+                println!("Looping...");
+                loop {
+                    sleep(Duration::from_secs(1)).await;
                 }
             }
             "help" => {
@@ -147,6 +153,7 @@ async fn main() {
                     }
                 } else {
                     println!("Unknown command: {}", cmd);
+                    panic!("Unknown command");
                 }
             }
         }
