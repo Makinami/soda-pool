@@ -61,21 +61,14 @@ impl WrappedClientBuilder {
             tokio::spawn(async move {
                 let mut interval = interval(self.dns_interval);
                 loop {
-                    ct
-                        .run_until_cancelled(check_dns(
-                            &endpoint,
-                            &ready_clients,
-                            &broken_endpoints,
-                        ))
+                    ct.run_until_cancelled(check_dns(&endpoint, &ready_clients, &broken_endpoints))
                         .await;
 
                     if let Some(initiated_send) = initiated_send.take() {
                         let _ = initiated_send.send(());
                     }
 
-                    ct
-                        .run_until_cancelled(interval.tick())
-                        .await;
+                    ct.run_until_cancelled(interval.tick()).await;
                 }
             })
         };
@@ -84,31 +77,47 @@ impl WrappedClientBuilder {
             // Get shared ownership of the resources.
             let ready_clients = ready_clients.clone();
             let broken_endpoints = broken_endpoints.clone();
+            let ct = ct.clone();
 
             tokio::spawn(async move {
-                let wait_duration = Duration::from_secs(1);
+                // todo-soundness: Handle both broken endpoint errors and task cancellation.
                 loop {
-                    // todo-performance: block_in_place is not the best solution here. It will prevent further tasks from being scheduled on the current thread,
-                    // but may block the ones already scheduled. It's ok for now for testing but should be avoided in production.
-                    let Some((ip_address, backoff)) = tokio::task::block_in_place(|| {
-                        broken_endpoints.next_broken_ip_address(wait_duration)
-                    })
-                    .unwrap() else {
+                    if ct.is_cancelled() {
+                        break;
+                    }
+
+                    let Some((ip_address, backoff)) = ct
+                        .run_until_cancelled(broken_endpoints.next_broken_ip_address())
+                        .await
+                        .transpose()
+                        .unwrap()
+                    else {
                         continue;
                     };
 
-                    let connection_test_result = self.endpoint.build(ip_address).connect().await;
+                    let Some(connection_test_result) = ct
+                        .run_until_cancelled(self.endpoint.build(ip_address).connect())
+                        .await
+                    else {
+                        trace!("Connection test cancelled for {:?}", ip_address);
+                        continue;
+                    };
 
                     if let Ok(channel) = connection_test_result {
                         info!("Connection established to {:?}", ip_address);
-                        // note: If only this task wouldn't use ready_clients, it would be trivial to move it to BrokenEndpoints itself.
-                        // Maybe channel communication would be better here.
-                        ready_clients.write().await.push((ip_address, channel));
+                        if let Some(mut ready_clients) =
+                            ct.run_until_cancelled(ready_clients.write()).await
+                        {
+                            ready_clients.push((ip_address, channel));
+                        } // else case means the task was cancelled and we'll leave the loop in the next iteration.
                     } else {
                         warn!("Can't connect to {:?}", ip_address);
-                        broken_endpoints
-                            .add_address_with_backoff(ip_address, backoff)
-                            .unwrap();
+                        ct.run_until_cancelled(
+                            broken_endpoints.add_address_with_backoff(ip_address, backoff),
+                        )
+                        .await
+                        .transpose()
+                        .unwrap();
                     }
                 }
             })
@@ -157,7 +166,7 @@ async fn check_dns(
         }
 
         // Skip if the address is already in broken_endpoints.
-        if let Some(entry) = broken_endpoints.get_entry(address).unwrap() {
+        if let Some(entry) = broken_endpoints.get_entry(address).await.unwrap() {
             trace!("Skipping {:?} as already broken", address);
             broken.push(entry);
             continue;
@@ -175,7 +184,7 @@ async fn check_dns(
 
     // Replace a list of clients stored in `ready_clients`` with the new ones constructed in `ready`.
     let _ = replace(&mut *ready_clients.write().await, ready);
-    broken_endpoints.replace_with(broken).unwrap();
+    broken_endpoints.replace_with(broken).await.unwrap();
 }
 
 #[derive(Clone)]
@@ -213,6 +222,7 @@ impl WrappedClient {
         }
         self.broken_endpoints
             .add_address(ip_address)
+            .await
             .map_err(From::from)
     }
 }

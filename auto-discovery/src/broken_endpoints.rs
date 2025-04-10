@@ -1,8 +1,13 @@
 use std::{
-    cmp::min, collections::BinaryHeap, mem::replace, net::IpAddr, sync::{Mutex, PoisonError}, time::Duration
+    cmp::min, collections::BinaryHeap, mem::replace, net::IpAddr, sync::PoisonError, time::Duration,
 };
 
 use chrono::{DateTime, Timelike, Utc};
+use tokio::{
+    select,
+    sync::{Mutex, Notify},
+    time::sleep,
+};
 
 type DelayedAddress = (BackoffTracker, IpAddr);
 
@@ -12,7 +17,7 @@ type DelayedAddress = (BackoffTracker, IpAddr);
 #[derive(Default)]
 pub(crate) struct BrokenEndpoints {
     addresses: Mutex<BinaryHeap<DelayedAddress>>,
-    condvar: std::sync::Condvar,
+    notifier: Notify,
 }
 
 impl BrokenEndpoints {
@@ -22,70 +27,81 @@ impl BrokenEndpoints {
     ///
     /// Note: While calling replace or swap on the BrokenEndpoints itself won't cause an error,
     /// it also won't notify the waiting threads about the change.
-    pub(crate) fn replace_with(&self, new: BinaryHeap<DelayedAddress>) -> Result<(), BrokenEndpointsError> {
+    pub(crate) async fn replace_with(
+        &self,
+        new: BinaryHeap<DelayedAddress>,
+    ) -> Result<(), BrokenEndpointsError> {
         let has_broken = !new.is_empty();
-        let _ = replace(&mut *self.addresses.lock()?, new);
+        let _ = replace(&mut *self.addresses.lock().await, new);
         if has_broken {
-            self.condvar.notify_one();
+            self.notifier.notify_one();
         }
         Ok(())
     }
 
-    pub(crate) fn get_entry(&self, address: IpAddr) -> Result<Option<DelayedAddress>, BrokenEndpointsError> {
-        Ok(self.addresses.lock()?.iter().find(|(_, addr)| *addr == address).cloned())
+    pub(crate) async fn get_entry(
+        &self,
+        address: IpAddr,
+    ) -> Result<Option<DelayedAddress>, BrokenEndpointsError> {
+        Ok(self
+            .addresses
+            .lock()
+            .await
+            .iter()
+            .find(|(_, addr)| *addr == address)
+            .cloned())
     }
 
-    pub(crate) fn add_address(&self, address: IpAddr) -> Result<(), BrokenEndpointsError> {
+    pub(crate) async fn add_address(&self, address: IpAddr) -> Result<(), BrokenEndpointsError> {
         self.add_address_with_backoff(address, BackoffTracker::from_failed_times(1))
+            .await
     }
 
-    pub(crate) fn add_address_with_backoff(&self, address: IpAddr, last_backoff: BackoffTracker) -> Result<(), BrokenEndpointsError> {
+    pub(crate) async fn add_address_with_backoff(
+        &self,
+        address: IpAddr,
+        last_backoff: BackoffTracker,
+    ) -> Result<(), BrokenEndpointsError> {
         let next_test_time = BackoffTracker::from_failed_times(last_backoff.failed_times() + 1);
-        self.addresses
-            .lock()?
-            .push((next_test_time, address));
-        self.condvar.notify_one();
+        self.addresses.lock().await.push((next_test_time, address));
+        self.notifier.notify_one();
         Ok(())
     }
 
     /// Returns the next broken IP address that should be tested.
     ///
     /// Warning: This function will block until the next broken IP address is available or max_wait_duration has passed.
-    pub(crate) fn next_broken_ip_address(
+    pub(crate) async fn next_broken_ip_address(
         &self,
-        max_wait_duration: Duration,
-    ) -> Result<Option<(IpAddr, BackoffTracker)>, BrokenEndpointsError> {
-        let max_end_wait = Utc::now() + max_wait_duration;
+    ) -> Result<(IpAddr, BackoffTracker), BrokenEndpointsError> {
+        //let max_end_wait = Utc::now() + max_wait_duration;
         loop {
-            let mut guard = self.addresses.lock()?;
-            let now = Utc::now();
+            let mut guard = self.addresses.lock().await;
+
             if let Some((instant, _)) = guard.peek() {
+                let now = Utc::now();
                 if now < instant.next_test_time() {
                     let durr = (instant.next_test_time() - now)
                         .to_std()
                         .expect("behind an if check, so cannot fail");
-                    let result = self
-                        .condvar
-                        .wait_timeout_while(guard, durr, |endpoints| endpoints.is_empty())?;
-                    if result.1.timed_out() {
-                        return Ok(None);
+                    drop(guard);
+                    select! {
+                        _ = sleep(durr) => {
+                            continue;
+                        }
+                        _ = self.notifier.notified() => {
+                            continue;
+                        }
                     }
                 } else {
-                    let entry = guard.pop().expect("peeked an element, so pop should not fail");
-                    return Ok(Some((entry.1, entry.0)));
-                }
-            } else if now < max_end_wait {
-                let dur = (max_end_wait - now)
-                    .to_std()
-                    .expect("behind an if check, so cannot fail");
-                let result = self
-                    .condvar
-                    .wait_timeout_while(guard, dur, |endpoints| endpoints.is_empty())?;
-                if result.1.timed_out() {
-                    return Ok(None);
+                    let entry = guard.pop().expect(
+                        "peeked an element while holding the same mutex guard, so pop cannot fail",
+                    );
+                    return Ok((entry.1, entry.0));
                 }
             } else {
-                return Ok(None);
+                drop(guard);
+                self.notifier.notified().await;
             }
         }
     }
