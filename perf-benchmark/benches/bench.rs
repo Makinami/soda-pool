@@ -63,10 +63,6 @@ pub fn grpc_client(c: &mut Criterion) {
     if prev_test_failed.load(Relaxed) {
         println!("Some tests failed.");
     }
-
-    group.finish();
-
-    runner.shutdown_background();
 }
 
 fn grpc_connection(c: &mut Criterion) {
@@ -83,10 +79,6 @@ fn grpc_connection(c: &mut Criterion) {
             let _ = black_box(HealthClient::connect(endpoint.clone()).await);
         });
     });
-
-    group.finish();
-
-    runner.shutdown_background();
 }
 
 criterion_group!(benches, grpc_client, grpc_connection);

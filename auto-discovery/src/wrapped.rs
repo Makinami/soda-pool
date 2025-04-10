@@ -4,11 +4,10 @@ use std::{
 
 use rand::Rng;
 use tokio::{
-    sync::{RwLock, oneshot::channel},
-    task::JoinHandle,
+    sync::{oneshot::channel, RwLock},
+    task::{AbortHandle, JoinHandle},
     time::interval,
 };
-use tokio_util::sync::{CancellationToken, DropGuard};
 use tonic::{Status, transport::Channel};
 use tracing::{debug, info, trace, warn};
 
@@ -46,7 +45,6 @@ impl WrappedClientBuilder {
     pub async fn build(self) -> Result<WrappedClient, WrapperClientBuilderError> {
         let ready_clients = Arc::new(RwLock::new(Vec::new()));
         let broken_endpoints = Arc::new(BrokenEndpoints::default());
-        let ct = CancellationToken::new();
 
         let (initiated_send, initiated_recv) = channel();
         let mut initiated_send = Some(initiated_send);
@@ -56,72 +54,22 @@ impl WrappedClientBuilder {
             let ready_clients = ready_clients.clone();
             let broken_endpoints = broken_endpoints.clone();
             let endpoint = self.endpoint.clone();
-            let ct = ct.clone();
 
             tokio::spawn(async move {
                 let mut interval = interval(self.dns_interval);
                 loop {
-                    ct.run_until_cancelled(check_dns(&endpoint, &ready_clients, &broken_endpoints))
-                        .await;
+                    check_dns(&endpoint, &ready_clients, &broken_endpoints).await;
 
                     if let Some(initiated_send) = initiated_send.take() {
                         let _ = initiated_send.send(());
                     }
 
-                    ct.run_until_cancelled(interval.tick()).await;
+                    interval.tick().await;
                 }
             })
         };
 
-        let doctor_task = {
-            // Get shared ownership of the resources.
-            let ready_clients = ready_clients.clone();
-            let broken_endpoints = broken_endpoints.clone();
-            let ct = ct.clone();
-
-            tokio::spawn(async move {
-                // todo-soundness: Handle both broken endpoint errors and task cancellation.
-                loop {
-                    if ct.is_cancelled() {
-                        break;
-                    }
-
-                    let Some((ip_address, backoff)) = ct
-                        .run_until_cancelled(broken_endpoints.next_broken_ip_address())
-                        .await
-                        .transpose()
-                        .unwrap()
-                    else {
-                        continue;
-                    };
-
-                    let Some(connection_test_result) = ct
-                        .run_until_cancelled(self.endpoint.build(ip_address).connect())
-                        .await
-                    else {
-                        trace!("Connection test cancelled for {:?}", ip_address);
-                        continue;
-                    };
-
-                    if let Ok(channel) = connection_test_result {
-                        info!("Connection established to {:?}", ip_address);
-                        if let Some(mut ready_clients) =
-                            ct.run_until_cancelled(ready_clients.write()).await
-                        {
-                            ready_clients.push((ip_address, channel));
-                        } // else case means the task was cancelled and we'll leave the loop in the next iteration.
-                    } else {
-                        warn!("Can't connect to {:?}", ip_address);
-                        ct.run_until_cancelled(
-                            broken_endpoints.add_address_with_backoff(ip_address, backoff),
-                        )
-                        .await
-                        .transpose()
-                        .unwrap();
-                    }
-                }
-            })
-        };
+        let doctor_task = tokio::spawn(recheck_broken_endpoint(self.endpoint.clone(), ready_clients.clone(), broken_endpoints.clone()));
 
         match initiated_recv.await {
             Ok(_) => {}
@@ -133,9 +81,8 @@ impl WrappedClientBuilder {
         Ok(WrappedClient {
             ready_clients,
             broken_endpoints,
-            _dns_lookup_task: Arc::new(dns_lookup_task),
-            _doctor_task: Arc::new(doctor_task),
-            _drop_guard: Arc::new(ct.drop_guard()),
+            _dns_lookup_task: Arc::new(dns_lookup_task.into()),
+            _doctor_task: Arc::new(doctor_task.into()),
         })
     }
 }
@@ -187,6 +134,42 @@ async fn check_dns(
     broken_endpoints.replace_with(broken).await.unwrap();
 }
 
+async fn recheck_broken_endpoint(
+    endpoint: EndpointTemplate,
+    ready_clients: Arc<RwLock<Vec<(IpAddr, Channel)>>>,
+    broken_endpoints: Arc<BrokenEndpoints>,
+) {
+    loop {
+        let (ip_address, backoff) = broken_endpoints.next_broken_ip_address().await.unwrap();
+
+        let connection_test_result = endpoint.build(ip_address).connect().await;
+
+        if let Ok(channel) = connection_test_result {
+            info!("Connection established to {:?}", ip_address);
+            ready_clients.write().await.push((ip_address, channel));
+        } else {
+            warn!("Can't connect to {:?}", ip_address);
+            broken_endpoints.add_address_with_backoff(ip_address, backoff)
+                .await
+                .unwrap();
+        }
+    }
+}
+
+struct AbortOnDrop(AbortHandle);
+
+impl<T> From<JoinHandle<T>> for AbortOnDrop {
+    fn from(handle: JoinHandle<T>) -> Self {
+        Self(handle.abort_handle())
+    }
+}
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 #[derive(Clone)]
 pub struct WrappedClient {
     // Note: For current random load balances, Vec a perfect data structure.
@@ -195,9 +178,8 @@ pub struct WrappedClient {
     ready_clients: Arc<RwLock<Vec<(IpAddr, Channel)>>>,
     broken_endpoints: Arc<BrokenEndpoints>,
 
-    _dns_lookup_task: Arc<JoinHandle<()>>,
-    _doctor_task: Arc<JoinHandle<()>>,
-    _drop_guard: Arc<DropGuard>,
+    _dns_lookup_task: Arc<AbortOnDrop>,
+    _doctor_task: Arc<AbortOnDrop>,
 }
 
 impl WrappedClient {
