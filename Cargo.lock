@@ -2192,6 +2192,9 @@ dependencies = [
 name = "tonic-pool-build"
 version = "0.1.0"
 dependencies = [
+ "prettyplease",
+ "proc-macro2",
+ "quote",
  "syn",
  "tracing",
 ]

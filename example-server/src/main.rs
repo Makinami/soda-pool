@@ -153,7 +153,6 @@ async fn main() {
                     }
                 } else {
                     println!("Unknown command: {}", cmd);
-                    panic!("Unknown command");
                 }
             }
         }
