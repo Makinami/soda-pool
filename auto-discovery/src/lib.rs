@@ -1,3 +1,6 @@
+#![warn(clippy::unwrap_used)]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
 mod wrapped;
 pub use wrapped::*;
 

@@ -26,6 +26,7 @@ tls-webpki-roots = ["_tls-any", "tonic/tls-webpki-roots"]
 
 [dev-dependencies]
 rstest = { workspace = true }
+serial_test = { workspace = true }
 
-[lints.clippy]
-unwrap_used = "deny"
+[lints]
+workspace = true

@@ -11,6 +11,7 @@ pub fn resolve_domain(domain: &str) -> Result<impl Iterator<Item = IpAddr>> {
 }
 
 #[cfg(any(test, feature = "mock-dns"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub mod mock_net {
     use std::{io, net::SocketAddr, vec};
 
@@ -44,27 +45,52 @@ pub mod mock_net {
     }
 }
 
-#[test]
-fn can_mock_address_resolution() {
-    use std::{net::SocketAddr, str::FromStr};
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use serial_test::serial;
 
-    let addresses = vec![
-        IpAddr::from_str("128.0.0.1").unwrap(),
-        IpAddr::from_str("129.0.0.1").unwrap(),
-        IpAddr::from_str("::2").unwrap(),
-        IpAddr::from_str("::3").unwrap(),
-    ];
+    use super::*;
+    use std::{io, net::SocketAddr, str::FromStr};
 
-    {
-        let sockets = addresses
-            .iter()
-            .map(|ip| SocketAddr::new(*ip, 0))
-            .collect::<Vec<_>>();
-        mock_net::set_socket_addrs(Box::new(move |_, _| Ok(sockets.clone())));
+    #[test]
+    #[serial]
+    fn can_mock_address_resolution() {
+        let addresses = vec![
+            IpAddr::from_str("128.0.0.1").unwrap(),
+            IpAddr::from_str("129.0.0.1").unwrap(),
+            IpAddr::from_str("::2").unwrap(),
+            IpAddr::from_str("::3").unwrap(),
+        ];
+
+        {
+            let sockets = addresses
+                .iter()
+                .map(|ip| SocketAddr::new(*ip, 0))
+                .collect::<Vec<_>>();
+            mock_net::set_socket_addrs(Box::new(move |_, _| Ok(sockets.clone())));
+        }
+
+        assert_eq!(
+            resolve_domain("localhost").unwrap().collect::<Vec<_>>(),
+            addresses
+        );
     }
 
-    assert_eq!(
-        resolve_domain("localhost").unwrap().collect::<Vec<_>>(),
-        addresses
-    );
+    #[test]
+    #[serial]
+    fn forwards_errors() {
+        mock_net::set_socket_addrs(Box::new(|_, _| {
+            Err(io::Error::new(io::ErrorKind::Other, "mock error"))
+        }));
+
+        let result = resolve_domain("localhost");
+        assert!(result.is_err());
+        let error = match result {
+            Err(e) => e,
+            Ok(_) => unreachable!(),
+        };
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        assert_eq!(error.to_string(), "mock error");
+    }
 }
