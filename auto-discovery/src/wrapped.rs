@@ -49,16 +49,19 @@ impl WrappedClientBuilder {
         let (initiated_send, initiated_recv) = channel();
         let mut initiated_send = Some(initiated_send);
 
+        let dns_lookup_state = Arc::new(RwLock::new(None));
         let dns_lookup_task = {
             // Get shared ownership of the resources.
             let ready_clients = ready_clients.clone();
             let broken_endpoints = broken_endpoints.clone();
             let endpoint = self.endpoint.clone();
+            let dns_lookup_state = dns_lookup_state.clone();
 
             tokio::spawn(async move {
                 let mut interval = interval(self.dns_interval);
                 loop {
-                    check_dns(&endpoint, &ready_clients, &broken_endpoints).await;
+                    let result = check_dns(&endpoint, &ready_clients, &broken_endpoints).await;
+                    let _ = replace(&mut *dns_lookup_state.write().await, result.err());
 
                     if let Some(initiated_send) = initiated_send.take() {
                         let _ = initiated_send.send(());
@@ -86,6 +89,7 @@ impl WrappedClientBuilder {
             ready_clients,
             broken_endpoints,
             _dns_lookup_task: Arc::new(dns_lookup_task.into()),
+            _dns_lookup_state: dns_lookup_state,
             _doctor_task: Arc::new(doctor_task.into()),
         })
     }
@@ -95,9 +99,10 @@ async fn check_dns(
     endpoint: &EndpointTemplate,
     ready_clients: &RwLock<Vec<(IpAddr, Channel)>>,
     broken_endpoints: &BrokenEndpoints,
-) {
+) -> Result<(), WrappedClientError> {
     // Resolve domain to IP addresses.
-    let addresses = resolve_domain(endpoint.domain()).unwrap();
+    let addresses =
+        resolve_domain(endpoint.domain()).map_err(WrappedClientError::dns_resolution_error)?;
 
     let mut ready = Vec::new();
     let mut broken = BinaryHeap::new();
@@ -117,7 +122,7 @@ async fn check_dns(
         }
 
         // Skip if the address is already in broken_endpoints.
-        if let Some(entry) = broken_endpoints.get_entry(address).await.unwrap() {
+        if let Some(entry) = broken_endpoints.get_entry(address).await? {
             trace!("Skipping {:?} as already broken", address);
             broken.push(entry);
             continue;
@@ -135,7 +140,9 @@ async fn check_dns(
 
     // Replace a list of clients stored in `ready_clients`` with the new ones constructed in `ready`.
     let _ = replace(&mut *ready_clients.write().await, ready);
-    broken_endpoints.replace_with(broken).await.unwrap();
+    broken_endpoints.replace_with(broken).await?;
+
+    Ok(())
 }
 
 async fn recheck_broken_endpoint(
@@ -184,6 +191,7 @@ pub struct WrappedClient {
     broken_endpoints: Arc<BrokenEndpoints>,
 
     _dns_lookup_task: Arc<AbortOnDrop>,
+    _dns_lookup_state: Arc<RwLock<Option<WrappedClientError>>>,
     _doctor_task: Arc<AbortOnDrop>,
 }
 
@@ -307,6 +315,13 @@ macro_rules! define_client {
 pub enum WrappedClientError {
     NoReadyChannels,
     BrokenLock,
+    DnsResolutionError(std::io::Error),
+}
+
+impl WrappedClientError {
+    pub fn dns_resolution_error(e: std::io::Error) -> Self {
+        WrappedClientError::DnsResolutionError(e)
+    }
 }
 
 impl From<BrokenEndpointsError> for WrappedClientError {
@@ -320,6 +335,10 @@ impl std::fmt::Display for WrappedClientError {
         match self {
             WrappedClientError::NoReadyChannels => std::fmt::Display::fmt("No ready channels", f),
             WrappedClientError::BrokenLock => std::fmt::Display::fmt("Broken lock", f),
+            WrappedClientError::DnsResolutionError(e) => {
+                std::fmt::Display::fmt("DNS resolution error: ", f)?;
+                std::fmt::Display::fmt(e, f)
+            }
         }
     }
 }
@@ -336,6 +355,11 @@ impl From<WrappedClientError> for Status {
             }
             WrappedClientError::BrokenLock => {
                 let mut status = Status::new(tonic::Code::Internal, "Broken lock");
+                status.set_source(Arc::new(e));
+                status
+            }
+            WrappedClientError::DnsResolutionError(e) => {
+                let mut status = Status::new(tonic::Code::Unavailable, "DNS resolution error");
                 status.set_source(Arc::new(e));
                 status
             }
