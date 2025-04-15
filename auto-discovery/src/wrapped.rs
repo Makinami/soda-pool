@@ -72,11 +72,22 @@ impl WrappedClientBuilder {
             })
         };
 
-        let doctor_task = tokio::spawn(recheck_broken_endpoint(
-            self.endpoint.clone(),
-            ready_clients.clone(),
-            broken_endpoints.clone(),
-        ));
+        let doctor_state = Arc::new(RwLock::new(None));
+        let doctor_task = {
+            // Get shared ownership of the resources.
+            let ready_clients = ready_clients.clone();
+            let broken_endpoints = broken_endpoints.clone();
+            let endpoint = self.endpoint.clone();
+            let doctor_state = doctor_state.clone();
+
+            tokio::spawn(async move {
+                loop {
+                    // There is an asynchronous wait inside this function so we can run it in a tight loop here.
+                    let result = recheck_broken_endpoint(&endpoint, &ready_clients, &broken_endpoints).await;
+                    let _ = replace(&mut *doctor_state.write().await, result.err());
+                }
+            })
+        };
 
         match initiated_recv.await {
             Ok(_) => {}
@@ -146,26 +157,25 @@ async fn check_dns(
 }
 
 async fn recheck_broken_endpoint(
-    endpoint: EndpointTemplate,
-    ready_clients: Arc<RwLock<Vec<(IpAddr, Channel)>>>,
-    broken_endpoints: Arc<BrokenEndpoints>,
-) {
-    loop {
-        let (ip_address, backoff) = broken_endpoints.next_broken_ip_address().await.unwrap();
+    endpoint: &EndpointTemplate,
+    ready_clients: &RwLock<Vec<(IpAddr, Channel)>>,
+    broken_endpoints: &BrokenEndpoints,
+) -> Result<(), WrappedClientError> {
+    let (ip_address, backoff) = broken_endpoints.next_broken_ip_address().await?;
 
-        let connection_test_result = endpoint.build(ip_address).connect().await;
+    let connection_test_result = endpoint.build(ip_address).connect().await;
 
-        if let Ok(channel) = connection_test_result {
-            info!("Connection established to {:?}", ip_address);
-            ready_clients.write().await.push((ip_address, channel));
-        } else {
-            warn!("Can't connect to {:?}", ip_address);
-            broken_endpoints
-                .add_address_with_backoff(ip_address, backoff)
-                .await
-                .unwrap();
-        }
+    if let Ok(channel) = connection_test_result {
+        info!("Connection established to {:?}", ip_address);
+        ready_clients.write().await.push((ip_address, channel));
+    } else {
+        warn!("Can't connect to {:?}", ip_address);
+        broken_endpoints
+            .add_address_with_backoff(ip_address, backoff)
+            .await?;
     }
+
+    Ok(())
 }
 
 struct AbortOnDrop(AbortHandle);
@@ -271,10 +281,10 @@ macro_rules! define_client {
         }
 
         impl $client_type {
-            pub async fn new(endpoint: $crate::EndpointTemplate) -> Self {
-                Self {
-                    base: $crate::WrappedClientBuilder::new(endpoint).build().await.unwrap(),
-                }
+            pub async fn new(endpoint: $crate::EndpointTemplate) -> Result<Self, $crate::WrapperClientBuilderError> {
+                Ok(Self {
+                    base: $crate::WrappedClientBuilder::new(endpoint).build().await?,
+                })
             }
 
             async fn get_channel(&self) -> Result<(std::net::IpAddr, tonic::transport::Channel), $crate::WrappedClientError> {
