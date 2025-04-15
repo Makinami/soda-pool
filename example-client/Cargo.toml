@@ -8,6 +8,7 @@ colog = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 url = { workspace = true }
+tonic = { workspace = true }
 
 example-protobuf = { path = "../example-protobuf.gen" }
 auto-discovery = { path = "../auto-discovery" }

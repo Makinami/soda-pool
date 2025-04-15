@@ -232,15 +232,46 @@ impl WrappedClient {
     }
 }
 
+// todo-interface: This is only the first try at the retry policy. Another interface could be better.
+pub trait RetryPolicy {
+    fn should_retry(err: &tonic::Status, tries: usize) -> bool;
+}
+
+/// Default retry policy
+///
+/// This policy retries the request if seems to be a network error or otherwise
+/// originate from the client library. It does not retry if the error is from
+/// the server (e.g. NotFound, InvalidArgument, ...).
+pub struct DefaultRetryPolicy;
+impl RetryPolicy for DefaultRetryPolicy {
+    fn should_retry(err: &tonic::Status, _tries: usize) -> bool {
+        // Initial tests suggest that source of the error is set only when it comes
+        // from the client library (e.g. connection refused) and not the server.
+        std::error::Error::source(err).is_some()
+    }
+}
+
 #[macro_export]
 macro_rules! define_method {
-    ($client:ident, $name:ident, $request:ty, $response:ty) => {
+    ($client:ident, $name:ident, $request:ty, $response:ty) => { paste::paste! {
         pub async fn $name(
             &self,
             request: impl tonic::IntoRequest<$request>,
         ) -> Result<tonic::Response<$response>, tonic::Status> {
+            self.[<$name _with_retry>]::<$crate::DefaultRetryPolicy>(
+                request,
+            ).await
+        }
+
+        pub async fn [<$name _with_retry>] <RP: $crate::RetryPolicy>(
+            &self,
+            request: impl tonic::IntoRequest<$request>,
+        ) -> Result<tonic::Response<$response>, tonic::Status> {
             let (metadata, extensions, message) = request.into_request().into_parts();
+            let mut tries = 0;
             loop {
+                tries += 1;
+
                 // Get channel of random index.
                 let (ip_address, channel) = self.get_channel().await?;
 
@@ -256,20 +287,19 @@ macro_rules! define_method {
                         return Ok(response);
                     }
                     Err(e) => {
-                        // Initial tests suggest that source of the error is set only when it comes from the library (e.g. connection refused).
                         if std::error::Error::source(&e).is_some() {
-                            // If the error happened because the channel is dead (e.g. connection refused),
-                            // add the address to broken endpoints and retry request thought another channel.
-                            self.report_broken(ip_address).await;
-                        } else {
-                            // All errors that come from the server are not errors in a sense of connection problems so they don't set source.
-                            return Err(e.into());
+                            self.report_broken(ip_address).await?;
+                        }
+
+                        if RP::should_retry(&e, tries) == false {
+                            return Err(e);
                         }
                     }
                 }
             }
         }
-    };
+    }
+}
 }
 
 #[macro_export]
