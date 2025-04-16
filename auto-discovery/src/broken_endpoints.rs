@@ -62,7 +62,7 @@ impl BrokenEndpoints {
         address: IpAddr,
         last_backoff: BackoffTracker,
     ) -> Result<(), BrokenEndpointsError> {
-        let next_test_time = BackoffTracker::from_failed_times(last_backoff.failed_times() + 1);
+        let next_test_time = BackoffTracker::from_failed_times(last_backoff.failed_times().saturating_add(1));
         self.addresses.lock().await.push((next_test_time, address));
         self.notifier.notify_one();
         Ok(())
@@ -122,7 +122,7 @@ impl<T> From<PoisonError<T>> for BrokenEndpointsError {
 pub(crate) struct BackoffTracker(DateTime<Utc>);
 
 impl BackoffTracker {
-    pub fn from_failed_times(failed_times: u16) -> Self {
+    pub fn from_failed_times(failed_times: u8) -> Self {
         let timestamp = Utc::now() + calculate_backoff(failed_times);
         BackoffTracker(set_retires(timestamp, failed_times))
     }
@@ -131,7 +131,7 @@ impl BackoffTracker {
         self.0
     }
 
-    pub fn failed_times(&self) -> u16 {
+    pub fn failed_times(&self) -> u8 {
         get_retires(self.0)
     }
 }
@@ -139,13 +139,13 @@ impl BackoffTracker {
 // Note: The backoff strategy is very simple and might be inefficient.
 // It's just a placeholder for a more sophisticated strategy.
 // The current strategy is to wait 2^(failed_times-1) seconds before retrying.
-// The maximum wait time is 2^9 = 512 seconds (~9 minutes).
-fn calculate_backoff(failed_times: u16) -> Duration {
-    let failed_times = min(failed_times - 1, 9);
+// The maximum wait time is 2^6 = 64 seconds (~1 minutes).
+fn calculate_backoff(failed_times: u8) -> Duration {
+    let failed_times = min(failed_times - 1, 6);
     Duration::from_secs(2u64.pow(failed_times as u32))
 }
 
-fn set_retires(timestamp: DateTime<Utc>, failed_times: u16) -> DateTime<Utc> {
+fn set_retires(timestamp: DateTime<Utc>, failed_times: u8) -> DateTime<Utc> {
     let failed_times = min(failed_times, 0xFF);
     // The last byte of the nanoseconds field is used to store the number of failed times.
     // To make sure we do not go above the maximum nanoseconds value (2_000_000_000), we subtract 0x100.
@@ -155,6 +155,6 @@ fn set_retires(timestamp: DateTime<Utc>, failed_times: u16) -> DateTime<Utc> {
         .expect("couldn't failed to set nanos")
 }
 
-fn get_retires(timestamp: DateTime<Utc>) -> u16 {
-    (timestamp.nanosecond() & 0xFF) as u16
+fn get_retires(timestamp: DateTime<Utc>) -> u8 {
+    (timestamp.nanosecond() & 0xFF) as u8
 }
