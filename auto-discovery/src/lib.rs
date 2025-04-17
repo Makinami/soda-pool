@@ -10,3 +10,6 @@ mod broken_endpoints;
 
 mod endpoint_template;
 pub use endpoint_template::*;
+
+mod retry;
+pub use retry::*;

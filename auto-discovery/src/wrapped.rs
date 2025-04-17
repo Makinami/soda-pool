@@ -17,6 +17,7 @@ use crate::{
     endpoint_template::EndpointTemplate,
 };
 
+#[derive(Debug)]
 pub struct WrappedClientBuilder {
     endpoint: EndpointTemplate,
     dns_interval: Duration,
@@ -83,7 +84,8 @@ impl WrappedClientBuilder {
             tokio::spawn(async move {
                 loop {
                     // There is an asynchronous wait inside this function so we can run it in a tight loop here.
-                    let result = recheck_broken_endpoint(&endpoint, &ready_clients, &broken_endpoints).await;
+                    let result =
+                        recheck_broken_endpoint(&endpoint, &ready_clients, &broken_endpoints).await;
                     let _ = replace(&mut *doctor_state.write().await, result.err());
                 }
             })
@@ -232,74 +234,70 @@ impl WrappedClient {
     }
 }
 
-// todo-interface: This is only the first try at the retry policy. Another interface could be better.
-pub trait RetryPolicy {
-    fn should_retry(err: &tonic::Status, tries: usize) -> bool;
-}
-
-/// Default retry policy
-///
-/// This policy retries the request if seems to be a network error or otherwise
-/// originate from the client library. It does not retry if the error is from
-/// the server (e.g. NotFound, InvalidArgument, ...).
-pub struct DefaultRetryPolicy;
-impl RetryPolicy for DefaultRetryPolicy {
-    fn should_retry(err: &tonic::Status, _tries: usize) -> bool {
-        // Initial tests suggest that source of the error is set only when it comes
-        // from the client library (e.g. connection refused) and not the server.
-        std::error::Error::source(err).is_some()
-    }
-}
-
 #[macro_export]
 macro_rules! define_method {
-    ($client:ident, $name:ident, $request:ty, $response:ty) => { paste::paste! {
-        pub async fn $name(
-            &self,
-            request: impl tonic::IntoRequest<$request>,
-        ) -> Result<tonic::Response<$response>, tonic::Status> {
-            self.[<$name _with_retry>]::<$crate::DefaultRetryPolicy>(
-                request,
-            ).await
-        }
+    ($client:ident, $name:ident, $request:ty, $response:ty) => {
+        paste::paste! {
+            pub async fn $name(
+                &self,
+                request: impl tonic::IntoRequest<$request>,
+            ) -> Result<tonic::Response<$response>, tonic::Status> {
+                self.[<$name _with_retry>]::<$crate::DefaultRetryPolicy>(
+                    request,
+                ).await
+            }
 
-        pub async fn [<$name _with_retry>] <RP: $crate::RetryPolicy>(
-            &self,
-            request: impl tonic::IntoRequest<$request>,
-        ) -> Result<tonic::Response<$response>, tonic::Status> {
-            let (metadata, extensions, message) = request.into_request().into_parts();
-            let mut tries = 0;
-            loop {
-                tries += 1;
+            pub async fn [<$name _with_retry>] <RP: $crate::RetryPolicy>(
+                &self,
+                request: impl tonic::IntoRequest<$request>,
+            ) -> Result<tonic::Response<$response>, tonic::Status> {
+                let (metadata, extensions, message) = request.into_request().into_parts();
+                let mut tries = 0;
+                loop {
+                    tries += 1;
 
-                // Get channel of random index.
-                let (ip_address, channel) = self.get_channel().await?;
+                    // Get channel of random index.
+                    let (ip_address, channel) = self.get_channel().await?;
 
-                let request = tonic::Request::from_parts(
-                    metadata.clone(),
-                    extensions.clone(),
-                    message.clone(),
-                );
-                let result = $client::new(channel).$name(request).await;
+                    let request = tonic::Request::from_parts(
+                        metadata.clone(),
+                        extensions.clone(),
+                        message.clone(),
+                    );
+                    let result = $client::new(channel).$name(request).await;
 
-                match result {
-                    Ok(response) => {
-                        return Ok(response);
-                    }
-                    Err(e) => {
-                        if std::error::Error::source(&e).is_some() {
-                            self.report_broken(ip_address).await?;
+                    match result {
+                        Ok(response) => {
+                            return Ok(response);
                         }
+                        Err(e) => {
+                            let $crate::RetryCheckResult(server_status, retry_time) = RP::should_retry(&e, tries);
+                            if matches!(server_status, $crate::ServerStatus::Dead) {
+                                // If the server is dead, we should report it.
+                                self.report_broken(ip_address).await?;
+                            }
 
-                        if RP::should_retry(&e, tries) == false {
-                            return Err(e);
+                            match retry_time {
+                                $crate::RetryTime::DoNotRetry => {
+                                    // Do not retry and do not report broken endpoint.
+                                    return Err(e);
+                                }
+                                $crate::RetryTime::Immediately => {
+                                    // Retry immediately.
+                                    continue;
+                                }
+                                $crate::RetryTime::After(duration) => {
+                                    // Wait for the specified duration before retrying.
+                                    // todo-interface: Don't require client to have tokio dependency.
+                                    tokio::time::sleep(duration).await;
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-    }
-}
+    };
 }
 
 #[macro_export]

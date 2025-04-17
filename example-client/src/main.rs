@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use auto_discovery::EndpointTemplate;
+use auto_discovery::{EndpointTemplate, RetryCheckResult, RetryTime, ServerStatus};
 use example_protobuf::WrappedClient;
 use tokio::{task::JoinSet, time::interval};
 use tracing::info;
@@ -8,8 +8,8 @@ use url::Url;
 
 struct AlwaysRetry;
 impl auto_discovery::RetryPolicy for AlwaysRetry {
-    fn should_retry(_error: &tonic::Status, _tries: usize) -> bool {
-        true
+    fn should_retry(_error: &tonic::Status, _tries: usize) -> RetryCheckResult {
+        RetryCheckResult(ServerStatus::Dead, RetryTime::Immediately)
     }
 }
 

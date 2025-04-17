@@ -62,7 +62,8 @@ impl BrokenEndpoints {
         address: IpAddr,
         last_backoff: BackoffTracker,
     ) -> Result<(), BrokenEndpointsError> {
-        let next_test_time = BackoffTracker::from_failed_times(last_backoff.failed_times().saturating_add(1));
+        let next_test_time =
+            BackoffTracker::from_failed_times(last_backoff.failed_times().saturating_add(1));
         self.addresses.lock().await.push((next_test_time, address));
         self.notifier.notify_one();
         Ok(())
