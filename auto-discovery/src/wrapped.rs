@@ -9,7 +9,8 @@ use tokio::{
     time::interval,
 };
 use tonic::{Status, transport::Channel};
-use tracing::{debug, info, trace, warn};
+
+use tracing::{debug, trace};
 
 use crate::{
     broken_endpoints::{BackoffTracker, BrokenEndpoints, BrokenEndpointsError},
@@ -104,18 +105,19 @@ impl WrappedClientBuilder {
             _dns_lookup_task: Arc::new(dns_lookup_task.into()),
             _dns_lookup_state: dns_lookup_state,
             _doctor_task: Arc::new(doctor_task.into()),
+            _doctor_state: doctor_state,
         })
     }
 }
 
 async fn check_dns(
-    endpoint: &EndpointTemplate,
+    endpoint_template: &EndpointTemplate,
     ready_clients: &RwLock<Vec<(IpAddr, Channel)>>,
     broken_endpoints: &BrokenEndpoints,
 ) -> Result<(), WrappedClientError> {
     // Resolve domain to IP addresses.
-    let addresses =
-        resolve_domain(endpoint.domain()).map_err(WrappedClientError::dns_resolution_error)?;
+    let addresses = resolve_domain(endpoint_template.domain())
+        .map_err(WrappedClientError::dns_resolution_error)?;
 
     let mut ready = Vec::new();
     let mut broken = BinaryHeap::new();
@@ -142,8 +144,7 @@ async fn check_dns(
         }
 
         debug!("Connecting to: {:?}", address);
-        let endpoint = endpoint.build(address);
-        let channel = endpoint.connect().await;
+        let channel = endpoint_template.build(address).connect().await;
         if let Ok(channel) = channel {
             ready.push((address, channel));
         } else {
@@ -168,10 +169,10 @@ async fn recheck_broken_endpoint(
     let connection_test_result = endpoint.build(ip_address).connect().await;
 
     if let Ok(channel) = connection_test_result {
-        info!("Connection established to {:?}", ip_address);
+        debug!("Connection established to {:?}", ip_address);
         ready_clients.write().await.push((ip_address, channel));
     } else {
-        warn!("Can't connect to {:?}", ip_address);
+        debug!("Can't connect to {:?}", ip_address);
         broken_endpoints
             .add_address_with_backoff(ip_address, backoff)
             .await?;
@@ -205,6 +206,7 @@ pub struct WrappedClient {
     _dns_lookup_task: Arc<AbortOnDrop>,
     _dns_lookup_state: Arc<RwLock<Option<WrappedClientError>>>,
     _doctor_task: Arc<AbortOnDrop>,
+    _doctor_state: Arc<RwLock<Option<WrappedClientError>>>,
 }
 
 impl WrappedClient {
