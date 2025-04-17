@@ -31,3 +31,4 @@ url = "2.5.4"
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage,coverage_nightly)'] }
+missing_debug_implementations = { level = "warn" }

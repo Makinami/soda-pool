@@ -16,7 +16,7 @@ impl auto_discovery::RetryPolicy for AlwaysRetry {
 #[tokio::main]
 async fn main() {
     let mut set = JoinSet::new();
-    colog::init();
+    tracing_subscriber::fmt().init();
 
     let template = EndpointTemplate::new(Url::parse("http://localhost:50001").unwrap()).unwrap();
     let client = WrappedClient::new(template).await.unwrap();

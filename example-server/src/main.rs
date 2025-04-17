@@ -16,6 +16,8 @@ const PORT: u16 = 50001;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt().init();
+
     let mut tasks = HashMap::new();
     let mut reliability = 0.9;
     let mut avg_wait = Duration::from_millis(500);
