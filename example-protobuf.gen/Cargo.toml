@@ -4,11 +4,7 @@ version = "0.1.0"
 edition = { workspace = true }
 
 [dependencies]
-http = { workspace = true }
 prost = { workspace = true }
 tonic = { workspace = true }
-paste = { workspace = true }
-tracing = { workspace = true }
-tokio = { workspace = true }
 
 auto-discovery = { path = "../auto-discovery" }

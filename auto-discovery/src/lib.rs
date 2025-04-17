@@ -13,3 +13,6 @@ pub use endpoint_template::*;
 
 mod retry;
 pub use retry::*;
+
+#[doc(hidden)]
+pub mod deps;

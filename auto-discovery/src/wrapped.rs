@@ -234,10 +234,11 @@ impl WrappedClient {
     }
 }
 
+// todo-completeness: Add tracing behind a feature flag.
 #[macro_export]
 macro_rules! define_method {
     ($client:ident, $name:ident, $request:ty, $response:ty) => {
-        paste::paste! {
+        $crate::deps::paste! {
             pub async fn $name(
                 &self,
                 request: impl tonic::IntoRequest<$request>,
@@ -289,7 +290,7 @@ macro_rules! define_method {
                                 $crate::RetryTime::After(duration) => {
                                     // Wait for the specified duration before retrying.
                                     // todo-interface: Don't require client to have tokio dependency.
-                                    tokio::time::sleep(duration).await;
+                                    $crate::deps::sleep(duration).await;
                                 }
                             }
                         }

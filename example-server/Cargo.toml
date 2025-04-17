@@ -7,6 +7,6 @@ edition = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tonic = { workspace = true }
-tracing-subscriber = "0.3"
+tracing-subscriber = { workspace = true }
 
 example-protobuf = { path = "../example-protobuf.gen" }
