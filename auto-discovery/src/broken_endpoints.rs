@@ -1,5 +1,5 @@
 use std::{
-    cmp::min, collections::BinaryHeap, mem::replace, net::IpAddr, sync::PoisonError, time::Duration,
+    cmp::min, collections::BinaryHeap, mem::replace, net::IpAddr, ops::Deref, sync::PoisonError, time::Duration
 };
 
 use chrono::{DateTime, Timelike, Utc};
@@ -105,6 +105,12 @@ impl BrokenEndpoints {
                 self.notifier.notified().await;
             }
         }
+    }
+
+    pub(crate) async fn addresses(
+        &self,
+    ) -> impl Deref<Target = BinaryHeap<DelayedAddress>> + Send {
+        self.addresses.lock().await
     }
 }
 

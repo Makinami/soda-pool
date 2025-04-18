@@ -2,11 +2,10 @@ use std::{
     collections::BinaryHeap, error::Error, mem::replace, net::IpAddr, sync::Arc, time::Duration,
 };
 
+use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
 use rand::Rng;
 use tokio::{
-    sync::{RwLock, oneshot::channel},
-    task::{AbortHandle, JoinHandle},
-    time::interval,
+    sync::{oneshot::channel, RwLock}, task::{AbortHandle, JoinHandle}, time::interval
 };
 use tonic::{Status, transport::Channel};
 
@@ -85,8 +84,10 @@ impl WrappedClientBuilder {
             tokio::spawn(async move {
                 loop {
                     // There is an asynchronous wait inside this function so we can run it in a tight loop here.
-                    let result =
-                        recheck_broken_endpoint(&endpoint, &ready_clients, &broken_endpoints).await;
+                    let result = async {
+                        let (ip_address, backoff) = broken_endpoints.next_broken_ip_address().await?;
+                        recheck_broken_endpoint(ip_address, backoff, &endpoint, &ready_clients, &broken_endpoints).await
+                    }.await;
                     let _ = replace(&mut *doctor_state.write().await, result.err());
                 }
             })
@@ -100,6 +101,7 @@ impl WrappedClientBuilder {
         }
 
         Ok(WrappedClient {
+            template: Arc::new(self.endpoint),
             ready_clients,
             broken_endpoints,
             _dns_lookup_task: Arc::new(dns_lookup_task.into()),
@@ -160,12 +162,12 @@ async fn check_dns(
 }
 
 async fn recheck_broken_endpoint(
+    ip_address: IpAddr,
+    backoff: BackoffTracker,
     endpoint: &EndpointTemplate,
     ready_clients: &RwLock<Vec<(IpAddr, Channel)>>,
     broken_endpoints: &BrokenEndpoints,
 ) -> Result<(), WrappedClientError> {
-    let (ip_address, backoff) = broken_endpoints.next_broken_ip_address().await?;
-
     let connection_test_result = endpoint.build(ip_address).connect().await;
 
     if let Ok(channel) = connection_test_result {
@@ -195,8 +197,10 @@ impl Drop for AbortOnDrop {
     }
 }
 
+// todo-performance: Need to change to INNER pattern to avoid cloning multiple Arcs.
 #[derive(Clone)]
 pub struct WrappedClient {
+    template: Arc<EndpointTemplate>,
     // Note: For current random load balances, Vec a perfect data structure.
     // However, depending on other algorithms we might want to support,
     // we might want to change it to something else.
@@ -211,16 +215,38 @@ pub struct WrappedClient {
 
 impl WrappedClient {
     pub async fn get_channel(&self) -> Result<(IpAddr, Channel), WrappedClientError> {
+        if let Some(entry) = self.get_channel_inner().await {
+            return Ok(entry);
+        }
+
+        let mut fut = FuturesUnordered::new();
+        fut.push(async {
+            let _ = check_dns(&self.template, &self.ready_clients, &self.broken_endpoints).await;
+            self.get_channel_inner().await
+        }.boxed());
+
+        let guard = self.broken_endpoints.addresses().await;
+        guard.iter().cloned()
+            .map(|(backoff, ip_address)| {
+                async move {
+                    let _ = recheck_broken_endpoint(ip_address, backoff, &self.template, &self.ready_clients, &self.broken_endpoints).await;
+                    self.get_channel_inner().await
+                }
+            }).for_each(|f| {
+                fut.push(f.boxed());
+            });
+
+        fut.select_next_some().await.clone().ok_or(WrappedClientError::NoReadyChannels)
+    }
+
+    async fn get_channel_inner(&self) -> Option<(IpAddr, Channel)> {
         let read_access = self.ready_clients.read().await;
         if read_access.is_empty() {
-            // If there are no healthy channels, maybe we could trigger DNS lookup from here?
-            // todo- correctness: There is a chance, that due to a long backoff, there actually already exists a healthy channel,
-            // but we are not aware of it. We should probably check if there are any broken endpoints and try to connect to them.
-            return Err(WrappedClientError::NoReadyChannels);
+            return None;
         }
         // If we keep track of what channels are currently being used, we could better load balance them.
         let index = rand::rng().random_range(0..read_access.len());
-        Ok(read_access[index].clone())
+        Some(read_access[index].clone())
     }
 
     pub async fn report_broken(&self, ip_address: IpAddr) -> Result<(), WrappedClientError> {

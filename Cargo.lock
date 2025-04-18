@@ -81,12 +81,14 @@ name = "auto-discovery"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "futures",
  "http",
  "paste",
  "rand",
  "rstest",
  "serial_test",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "tonic",
  "tracing",
