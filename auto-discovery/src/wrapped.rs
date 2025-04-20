@@ -2,6 +2,7 @@ use std::{
     collections::BinaryHeap, error::Error, mem::replace, net::IpAddr, sync::Arc, time::Duration,
 };
 
+use chrono::{DateTime, TimeDelta, Utc};
 use futures::{FutureExt, StreamExt, stream::FuturesUnordered};
 use rand::Rng;
 use tokio::{
@@ -229,6 +230,34 @@ impl WrappedClient {
         if let Some(entry) = self.get_channel_inner().await {
             return Ok(entry);
         }
+
+        // todo: This entire function is a bit of a mess, but this part absolutely needs to be cleaned up.
+        static RECHECK_BROKEN_ENDPOINTS: RwLock<DateTime<Utc>> =
+            RwLock::const_new(DateTime::<Utc>::MIN_UTC);
+        const MIN_INTERVAL: TimeDelta = TimeDelta::milliseconds(500);
+        let _guard = match RECHECK_BROKEN_ENDPOINTS.try_read() {
+            Ok(last_recheck_time)
+                if Utc::now().signed_duration_since(*last_recheck_time) < MIN_INTERVAL =>
+            {
+                return Err(WrappedClientError::NoReadyChannels);
+            }
+            Ok(guard) => {
+                drop(guard);
+                let mut guard = RECHECK_BROKEN_ENDPOINTS.write().await;
+                if let Some(entry) = self.get_channel_inner().await {
+                    return Ok(entry);
+                }
+                *guard = Utc::now();
+                guard
+            }
+            Err(_) => {
+                let _ = RECHECK_BROKEN_ENDPOINTS.write().await;
+                return self
+                    .get_channel_inner()
+                    .await
+                    .ok_or(WrappedClientError::NoReadyChannels);
+            }
+        };
 
         trace!("Force recheck of broken endpoints");
 
