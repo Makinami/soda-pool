@@ -2,10 +2,12 @@ use std::{
     collections::BinaryHeap, error::Error, mem::replace, net::IpAddr, sync::Arc, time::Duration,
 };
 
-use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, stream::FuturesUnordered};
 use rand::Rng;
 use tokio::{
-    sync::{oneshot::channel, RwLock}, task::{AbortHandle, JoinHandle}, time::interval
+    sync::{RwLock, oneshot::channel},
+    task::{AbortHandle, JoinHandle},
+    time::interval,
 };
 use tonic::{Status, transport::Channel};
 
@@ -85,9 +87,18 @@ impl WrappedClientBuilder {
                 loop {
                     // There is an asynchronous wait inside this function so we can run it in a tight loop here.
                     let result = async {
-                        let (ip_address, backoff) = broken_endpoints.next_broken_ip_address().await?;
-                        recheck_broken_endpoint(ip_address, backoff, &endpoint, &ready_clients, &broken_endpoints).await
-                    }.await;
+                        let (ip_address, backoff) =
+                            broken_endpoints.next_broken_ip_address().await?;
+                        recheck_broken_endpoint(
+                            ip_address,
+                            backoff,
+                            &endpoint,
+                            &ready_clients,
+                            &broken_endpoints,
+                        )
+                        .await
+                    }
+                    .await;
                     let _ = replace(&mut *doctor_state.write().await, result.err());
                 }
             })
@@ -219,24 +230,40 @@ impl WrappedClient {
             return Ok(entry);
         }
 
-        let mut fut = FuturesUnordered::new();
-        fut.push(async {
-            let _ = check_dns(&self.template, &self.ready_clients, &self.broken_endpoints).await;
-            self.get_channel_inner().await
-        }.boxed());
+        trace!("Force recheck of broken endpoints");
 
-        let guard = self.broken_endpoints.addresses().await;
-        guard.iter().cloned()
-            .map(|(backoff, ip_address)| {
+        let mut fut = FuturesUnordered::new();
+        fut.push(
+            async {
+                check_dns(&self.template, &self.ready_clients, &self.broken_endpoints)
+                    .await
+                    .ok()?;
+                self.get_channel_inner().await
+            }
+            .boxed(),
+        );
+
+        for (backoff, ip_address) in self.broken_endpoints.addresses().await.iter().cloned() {
+            fut.push(
                 async move {
-                    let _ = recheck_broken_endpoint(ip_address, backoff, &self.template, &self.ready_clients, &self.broken_endpoints).await;
+                    recheck_broken_endpoint(
+                        ip_address,
+                        backoff,
+                        &self.template,
+                        &self.ready_clients,
+                        &self.broken_endpoints,
+                    )
+                    .await
+                    .ok()?;
                     self.get_channel_inner().await
                 }
-            }).for_each(|f| {
-                fut.push(f.boxed());
-            });
+                .boxed(),
+            );
+        }
 
-        fut.select_next_some().await.clone().ok_or(WrappedClientError::NoReadyChannels)
+        fut.select_next_some()
+            .await
+            .ok_or(WrappedClientError::NoReadyChannels)
     }
 
     async fn get_channel_inner(&self) -> Option<(IpAddr, Channel)> {

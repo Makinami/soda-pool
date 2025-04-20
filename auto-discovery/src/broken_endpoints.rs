@@ -1,5 +1,6 @@
 use std::{
-    cmp::min, collections::BinaryHeap, mem::replace, net::IpAddr, ops::Deref, sync::PoisonError, time::Duration
+    cmp::min, collections::BinaryHeap, mem::replace, net::IpAddr, ops::Deref, sync::PoisonError,
+    time::Duration,
 };
 
 use chrono::{DateTime, Timelike, Utc};
@@ -64,8 +65,11 @@ impl BrokenEndpoints {
     ) -> Result<(), BrokenEndpointsError> {
         let next_test_time =
             BackoffTracker::from_failed_times(last_backoff.failed_times().saturating_add(1));
-        self.addresses.lock().await.push((next_test_time, address));
-        self.notifier.notify_one();
+        let mut guard = self.addresses.lock().await;
+        if !guard.iter().any(|(_, addr)| *addr == address) {
+            guard.push((next_test_time, address));
+            self.notifier.notify_one();
+        }
         Ok(())
     }
 
@@ -107,9 +111,7 @@ impl BrokenEndpoints {
         }
     }
 
-    pub(crate) async fn addresses(
-        &self,
-    ) -> impl Deref<Target = BinaryHeap<DelayedAddress>> + Send {
+    pub(crate) async fn addresses(&self) -> impl Deref<Target = BinaryHeap<DelayedAddress>> + Send {
         self.addresses.lock().await
     }
 }
