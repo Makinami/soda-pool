@@ -1,6 +1,4 @@
-use std::{
-    collections::BinaryHeap, error::Error, mem::replace, net::IpAddr, sync::Arc, time::Duration,
-};
+use std::{collections::BinaryHeap, mem::replace, net::IpAddr, sync::Arc, time::Duration};
 
 use chrono::{DateTime, TimeDelta, Utc};
 use futures::{FutureExt, StreamExt, stream::FuturesUnordered};
@@ -10,14 +8,15 @@ use tokio::{
     task::{AbortHandle, JoinHandle},
     time::interval,
 };
-use tonic::{Status, transport::Channel};
+use tonic::transport::Channel;
 
 use tracing::{debug, trace};
 
 use crate::{
-    broken_endpoints::{BackoffTracker, BrokenEndpoints, BrokenEndpointsError},
+    broken_endpoints::{BackoffTracker, BrokenEndpoints},
     dns::resolve_domain,
     endpoint_template::EndpointTemplate,
+    error::WrappedClientError,
 };
 
 #[derive(Debug)]
@@ -40,6 +39,7 @@ impl WrappedClientBuilder {
         }
     }
 
+    #[must_use]
     pub fn dns_interval(mut self, dns_interval: Duration) -> Self {
         self.dns_interval = dns_interval;
         self
@@ -106,7 +106,7 @@ impl WrappedClientBuilder {
         };
 
         match initiated_recv.await {
-            Ok(_) => {}
+            Ok(()) => {}
             Err(_) => {
                 return Err(WrapperClientBuilderError::FailedToInitiate);
             }
@@ -195,6 +195,7 @@ async fn recheck_broken_endpoint(
     Ok(())
 }
 
+#[derive(Debug)]
 struct AbortOnDrop(AbortHandle);
 
 impl<T> From<JoinHandle<T>> for AbortOnDrop {
@@ -210,7 +211,7 @@ impl Drop for AbortOnDrop {
 }
 
 // todo-performance: Need to change to INNER pattern to avoid cloning multiple Arcs.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WrappedClient {
     template: Arc<EndpointTemplate>,
     // Note: For current random load balances, Vec a perfect data structure.
@@ -227,14 +228,15 @@ pub struct WrappedClient {
 
 impl WrappedClient {
     pub async fn get_channel(&self) -> Result<(IpAddr, Channel), WrappedClientError> {
+        static RECHECK_BROKEN_ENDPOINTS: RwLock<DateTime<Utc>> =
+            RwLock::const_new(DateTime::<Utc>::MIN_UTC);
+        const MIN_INTERVAL: TimeDelta = TimeDelta::milliseconds(500);
+
         if let Some(entry) = self.get_channel_inner().await {
             return Ok(entry);
         }
 
         // todo: This entire function is a bit of a mess, but this part absolutely needs to be cleaned up.
-        static RECHECK_BROKEN_ENDPOINTS: RwLock<DateTime<Utc>> =
-            RwLock::const_new(DateTime::<Utc>::MIN_UTC);
-        const MIN_INTERVAL: TimeDelta = TimeDelta::milliseconds(500);
         let _guard = match RECHECK_BROKEN_ENDPOINTS.try_read() {
             Ok(last_recheck_time)
                 if Utc::now().signed_duration_since(*last_recheck_time) < MIN_INTERVAL =>
@@ -272,7 +274,7 @@ impl WrappedClient {
             .boxed(),
         );
 
-        for (backoff, ip_address) in self.broken_endpoints.addresses().await.iter().cloned() {
+        for (backoff, ip_address) in self.broken_endpoints.addresses().await.iter().copied() {
             fut.push(
                 async move {
                     recheck_broken_endpoint(
@@ -315,177 +317,5 @@ impl WrappedClient {
             .add_address(ip_address)
             .await
             .map_err(From::from)
-    }
-}
-
-// todo-completeness: Add tracing behind a feature flag.
-#[macro_export]
-macro_rules! define_method {
-    ($client:ident, $name:ident, $request:ty, $response:ty) => {
-        $crate::deps::paste! {
-            pub async fn $name(
-                &self,
-                request: impl tonic::IntoRequest<$request>,
-            ) -> Result<tonic::Response<$response>, tonic::Status> {
-                self.[<$name _with_retry>]::<$crate::DefaultRetryPolicy>(
-                    request,
-                ).await
-            }
-
-            pub async fn [<$name _with_retry>] <RP: $crate::RetryPolicy>(
-                &self,
-                request: impl tonic::IntoRequest<$request>,
-            ) -> Result<tonic::Response<$response>, tonic::Status> {
-                let (metadata, extensions, message) = request.into_request().into_parts();
-                let mut tries = 0;
-                loop {
-                    tries += 1;
-
-                    // Get channel of random index.
-                    let (ip_address, channel) = self.get_channel().await?;
-
-                    let request = tonic::Request::from_parts(
-                        metadata.clone(),
-                        extensions.clone(),
-                        message.clone(),
-                    );
-                    let result = $client::new(channel).$name(request).await;
-
-                    match result {
-                        Ok(response) => {
-                            return Ok(response);
-                        }
-                        Err(e) => {
-                            let $crate::RetryCheckResult(server_status, retry_time) = RP::should_retry(&e, tries);
-                            if matches!(server_status, $crate::ServerStatus::Dead) {
-                                // If the server is dead, we should report it.
-                                self.report_broken(ip_address).await?;
-                            }
-
-                            match retry_time {
-                                $crate::RetryTime::DoNotRetry => {
-                                    // Do not retry and do not report broken endpoint.
-                                    return Err(e);
-                                }
-                                $crate::RetryTime::Immediately => {
-                                    // Retry immediately.
-                                    continue;
-                                }
-                                $crate::RetryTime::After(duration) => {
-                                    // Wait for the specified duration before retrying.
-                                    // todo-interface: Don't require client to have tokio dependency.
-                                    $crate::deps::sleep(duration).await;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! define_client {
-    ($client_type:ident) => {
-        #[derive(Clone)]
-        pub struct $client_type {
-            base: $crate::WrappedClient,
-        }
-
-        impl $client_type {
-            pub async fn new(endpoint: $crate::EndpointTemplate) -> Result<Self, $crate::WrapperClientBuilderError> {
-                Ok(Self {
-                    base: $crate::WrappedClientBuilder::new(endpoint).build().await?,
-                })
-            }
-
-            async fn get_channel(&self) -> Result<(std::net::IpAddr, tonic::transport::Channel), $crate::WrappedClientError> {
-                self.base.get_channel().await
-            }
-
-            async fn report_broken(&self, ip_address: std::net::IpAddr) -> Result<(), $crate::WrappedClientError> {
-                self.base.report_broken(ip_address).await
-            }
-        }
-
-        impl From<$crate::WrappedClient> for $client_type {
-            fn from(base: $crate::WrappedClient) -> Self {
-                Self { base }
-            }
-        }
-    };
-    (
-        $client_type:ident, $original_client:ident, $(($name:ident, $request:ty, $response:ty)),+ $(,)?) => {
-        define_client!($client_type);
-        impl $client_type {
-            $(
-                define_method!($original_client, $name, $request, $response);
-            )+
-        }
-    };
-    ($client_type:ident, $(($original_client:ident, $name:ident, $request:ty, $response:ty)),+) => {
-        define_client!($client_type);
-        impl $client_type {
-            $(
-                define_method!($original_client, $name, $request, $response);
-            )+
-        }
-    };
-}
-
-#[derive(Debug)]
-pub enum WrappedClientError {
-    NoReadyChannels,
-    BrokenLock,
-    DnsResolutionError(std::io::Error),
-}
-
-impl WrappedClientError {
-    pub fn dns_resolution_error(e: std::io::Error) -> Self {
-        WrappedClientError::DnsResolutionError(e)
-    }
-}
-
-impl From<BrokenEndpointsError> for WrappedClientError {
-    fn from(_: BrokenEndpointsError) -> Self {
-        WrappedClientError::BrokenLock
-    }
-}
-
-impl std::fmt::Display for WrappedClientError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WrappedClientError::NoReadyChannels => std::fmt::Display::fmt("No ready channels", f),
-            WrappedClientError::BrokenLock => std::fmt::Display::fmt("Broken lock", f),
-            WrappedClientError::DnsResolutionError(e) => {
-                std::fmt::Display::fmt("DNS resolution error: ", f)?;
-                std::fmt::Display::fmt(e, f)
-            }
-        }
-    }
-}
-
-impl Error for WrappedClientError {}
-
-impl From<WrappedClientError> for Status {
-    fn from(e: WrappedClientError) -> Self {
-        match e {
-            WrappedClientError::NoReadyChannels => {
-                let mut status = Status::new(tonic::Code::Unavailable, "No ready channels");
-                status.set_source(Arc::new(e));
-                status
-            }
-            WrappedClientError::BrokenLock => {
-                let mut status = Status::new(tonic::Code::Internal, "Broken lock");
-                status.set_source(Arc::new(e));
-                status
-            }
-            WrappedClientError::DnsResolutionError(e) => {
-                let mut status = Status::new(tonic::Code::Unavailable, "DNS resolution error");
-                status.set_source(Arc::new(e));
-                status
-            }
-        }
     }
 }

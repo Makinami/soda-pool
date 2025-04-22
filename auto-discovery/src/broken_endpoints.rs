@@ -15,7 +15,7 @@ type DelayedAddress = (BackoffTracker, IpAddr);
 // Implementation using RwLock should be much nicer, but RwLock doesn't support CondVar.
 // Although untested, my current assumption is that broken endpoints will be rare enough
 // that using Mutex+CondVar will be faster than RwLock with some other strange synchronization.
-#[derive(Default)]
+#[derive(Default, Debug)] // todo: Maybe implement a custom Debug trait to avoid printing all the details.
 pub(crate) struct BrokenEndpoints {
     addresses: Mutex<BinaryHeap<DelayedAddress>>,
     notifier: Notify,
@@ -26,7 +26,7 @@ impl BrokenEndpoints {
     ///
     /// If the new list is not empty, it will notify the waiting threads.
     ///
-    /// Note: While calling replace or swap on the BrokenEndpoints itself won't cause an error,
+    /// Note: While calling replace or swap on the `BrokenEndpoints` itself won't cause an error,
     /// it also won't notify the waiting threads about the change.
     pub(crate) async fn replace_with(
         &self,
@@ -50,7 +50,7 @@ impl BrokenEndpoints {
             .await
             .iter()
             .find(|(_, addr)| *addr == address)
-            .cloned())
+            .copied())
     }
 
     pub(crate) async fn add_address(&self, address: IpAddr) -> Result<(), BrokenEndpointsError> {
@@ -75,11 +75,11 @@ impl BrokenEndpoints {
 
     /// Returns the next broken IP address that should be tested.
     ///
-    /// Warning: This function will block until the next broken IP address is available or max_wait_duration has passed.
+    /// Warning: This function will block until the next broken IP address is available or `max_wait_duration` has passed.
     pub(crate) async fn next_broken_ip_address(
         &self,
     ) -> Result<(IpAddr, BackoffTracker), BrokenEndpointsError> {
-        //let max_end_wait = Utc::now() + max_wait_duration;
+        // let max_end_wait = Utc::now() + max_wait_duration;
         loop {
             let mut guard = self.addresses.lock().await;
 
@@ -91,12 +91,8 @@ impl BrokenEndpoints {
                         .expect("behind an if check, so cannot fail");
                     drop(guard);
                     select! {
-                        _ = sleep(durr) => {
-                            continue;
-                        }
-                        _ = self.notifier.notified() => {
-                            continue;
-                        }
+                        () = sleep(durr) => {}
+                        () = self.notifier.notified() => {}
                     }
                 } else {
                     let entry = guard.pop().expect(
@@ -127,7 +123,8 @@ impl<T> From<PoisonError<T>> for BrokenEndpointsError {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+// todo: Maybe implement a custom Debug trait to avoid printing all the details.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub(crate) struct BackoffTracker(DateTime<Utc>);
 
 impl BackoffTracker {
@@ -151,14 +148,14 @@ impl BackoffTracker {
 // The maximum wait time is 2^6 = 64 seconds (~1 minutes).
 fn calculate_backoff(failed_times: u8) -> Duration {
     let failed_times = min(failed_times - 1, 6);
-    Duration::from_secs(2u64.pow(failed_times as u32))
+    Duration::from_secs(2u64.pow(u32::from(failed_times)))
 }
 
 fn set_retires(timestamp: DateTime<Utc>, failed_times: u8) -> DateTime<Utc> {
     let failed_times = min(failed_times, 0xFF);
     // The last byte of the nanoseconds field is used to store the number of failed times.
     // To make sure we do not go above the maximum nanoseconds value (2_000_000_000), we subtract 0x100.
-    let nanos = (timestamp.nanosecond() & 0xFFFFFF00 | failed_times as u32) - 0x100;
+    let nanos = (timestamp.nanosecond() & 0xFFFF_FF00 | u32::from(failed_times)) - 0x100;
     timestamp
         .with_nanosecond(nanos)
         .expect("couldn't failed to set nanos")

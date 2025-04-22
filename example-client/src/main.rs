@@ -27,7 +27,7 @@ async fn main() {
     for _ in 0..4 {
         let client = client.clone();
         set.spawn(async move {
-            let mut interval = interval(Duration::from_millis(1000));
+            let mut interval = interval(Duration::from_millis(100));
             loop {
                 interval.tick().await;
                 let response = client.is_alive_with_retry::<AlwaysRetry>(()).await;

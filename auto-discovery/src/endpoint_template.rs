@@ -79,6 +79,7 @@ impl EndpointTemplate {
         })
     }
 
+    #[must_use]
     pub fn origin(self, origin: Uri) -> Self {
         Self {
             origin: Some(origin),
@@ -96,6 +97,7 @@ impl EndpointTemplate {
             .map_err(|_| Error::InvalidUserAgent)
     }
 
+    #[must_use]
     pub fn timeout(self, dur: Duration) -> Self {
         Self {
             timeout: Some(dur),
@@ -117,6 +119,7 @@ impl EndpointTemplate {
         })
     }
 
+    #[must_use]
     pub fn connect_timeout(self, dur: Duration) -> Self {
         Self {
             connect_timeout: Some(dur),
@@ -124,6 +127,7 @@ impl EndpointTemplate {
         }
     }
 
+    #[must_use]
     pub fn tcp_keepalive(self, tcp_keepalive: Option<Duration>) -> Self {
         Self {
             tcp_keepalive,
@@ -131,6 +135,7 @@ impl EndpointTemplate {
         }
     }
 
+    #[must_use]
     pub fn concurrency_limit(self, limit: usize) -> Self {
         Self {
             concurrency_limit: Some(limit),
@@ -138,6 +143,7 @@ impl EndpointTemplate {
         }
     }
 
+    #[must_use]
     pub fn rate_limit(self, limit: u64, duration: Duration) -> Self {
         Self {
             rate_limit: Some((limit, duration)),
@@ -145,6 +151,7 @@ impl EndpointTemplate {
         }
     }
 
+    #[must_use]
     pub fn initial_stream_window_size(self, sz: impl Into<Option<u32>>) -> Self {
         Self {
             init_stream_window_size: sz.into(),
@@ -152,6 +159,7 @@ impl EndpointTemplate {
         }
     }
 
+    #[must_use]
     pub fn initial_connection_window_size(self, sz: impl Into<Option<u32>>) -> Self {
         Self {
             init_connection_window_size: sz.into(),
@@ -159,6 +167,7 @@ impl EndpointTemplate {
         }
     }
 
+    #[must_use]
     pub fn buffer_size(self, sz: impl Into<Option<usize>>) -> Self {
         Self {
             buffer_size: sz.into(),
@@ -166,6 +175,7 @@ impl EndpointTemplate {
         }
     }
 
+    #[must_use]
     pub fn tcp_nodelay(self, enabled: bool) -> Self {
         Self {
             tcp_nodelay: Some(enabled),
@@ -173,6 +183,7 @@ impl EndpointTemplate {
         }
     }
 
+    #[must_use]
     pub fn http2_keep_alive_interval(self, interval: Duration) -> Self {
         Self {
             http2_keep_alive_interval: Some(interval),
@@ -180,6 +191,7 @@ impl EndpointTemplate {
         }
     }
 
+    #[must_use]
     pub fn keep_alive_timeout(self, duration: Duration) -> Self {
         Self {
             http2_keep_alive_timeout: Some(duration),
@@ -187,6 +199,7 @@ impl EndpointTemplate {
         }
     }
 
+    #[must_use]
     pub fn keep_alive_while_idle(self, enabled: bool) -> Self {
         Self {
             http2_keep_alive_while_idle: Some(enabled),
@@ -194,6 +207,7 @@ impl EndpointTemplate {
         }
     }
 
+    #[must_use]
     pub fn http2_adaptive_window(self, enabled: bool) -> Self {
         Self {
             http2_adaptive_window: Some(enabled),
@@ -215,7 +229,7 @@ impl EndpointTemplate {
         }
 
         if let Some(timeout) = self.timeout {
-            endpoint = endpoint.timeout(timeout)
+            endpoint = endpoint.timeout(timeout);
         }
 
         #[cfg(feature = "_tls-any")]
@@ -226,13 +240,13 @@ impl EndpointTemplate {
         }
 
         if let Some(connect_timeout) = self.connect_timeout {
-            endpoint = endpoint.connect_timeout(connect_timeout)
+            endpoint = endpoint.connect_timeout(connect_timeout);
         }
 
         endpoint = endpoint.tcp_keepalive(self.tcp_keepalive);
 
         if let Some(limit) = self.concurrency_limit {
-            endpoint = endpoint.concurrency_limit(limit)
+            endpoint = endpoint.concurrency_limit(limit);
         }
 
         if let Some((limit, duration)) = self.rate_limit {
