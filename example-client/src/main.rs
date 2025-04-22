@@ -4,6 +4,7 @@ use auto_discovery::{EndpointTemplate, RetryCheckResult, RetryTime, ServerStatus
 use example_protobuf::WrappedClient;
 use tokio::{task::JoinSet, time::interval};
 use tracing::info;
+use tracing_subscriber::EnvFilter;
 use url::Url;
 
 struct AlwaysRetry;
@@ -16,7 +17,9 @@ impl auto_discovery::RetryPolicy for AlwaysRetry {
 #[tokio::main]
 async fn main() {
     let mut set = JoinSet::new();
-    tracing_subscriber::fmt().init();
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
 
     let template = EndpointTemplate::new(Url::parse("http://localhost:50001").unwrap()).unwrap();
     let client = WrappedClient::new(template).await.unwrap();

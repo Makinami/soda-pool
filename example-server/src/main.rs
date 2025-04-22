@@ -58,6 +58,7 @@ async fn main() {
             if let Some(task) = tasks.remove(&$address) {
                 let _ = task.1.send(());
                 println!("Server on {} scheduled to stop", $address);
+                sleep(Duration::from_millis(250)).await;
             }
         };
     }
@@ -155,7 +156,6 @@ async fn main() {
                     }
                 } else {
                     println!("Unknown command: {}", cmd);
-                    panic!("Unknown command");
                 }
             }
         }
