@@ -307,6 +307,7 @@ impl TryFrom<Url> for EndpointTemplate {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use std::{net::IpAddr, str::FromStr};
 

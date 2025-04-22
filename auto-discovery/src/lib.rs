@@ -1,3 +1,6 @@
+#![warn(clippy::unwrap_used)]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
 mod wrapped;
 pub use wrapped::*;
 
@@ -7,3 +10,9 @@ mod broken_endpoints;
 
 mod endpoint_template;
 pub use endpoint_template::*;
+
+mod retry;
+pub use retry::*;
+
+#[doc(hidden)]
+pub mod deps;

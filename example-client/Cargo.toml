@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = { workspace = true }
 
 [dependencies]
-colog = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+tonic = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 url = { workspace = true }
 
 example-protobuf = { path = "../example-protobuf.gen" }
