@@ -3,7 +3,7 @@ use std::{
 };
 
 use proc_macro2::{Span, TokenStream};
-use syn::{parse_file, parse_quote, Ident, Item, ItemMod, PathSegment, Receiver, Stmt};
+use syn::{parse_file, Ident, Item, ItemMod, PathSegment, Receiver, };
 use tracing::{debug, info};
 use quote::quote;
 
@@ -24,7 +24,7 @@ impl TonicPoolBuilder {
     }
 
     pub fn wrap_services(&self, services: &[impl AsRef<str>]) -> Result<(), TonicPoolBuilderError> {
-        let dir = self.dir.as_ref().ok_or(())?; // todo
+        let dir = self.dir.as_ref().ok_or(())?;
 
         services.into_iter().try_for_each(|service| {
             let service_filename = if service.as_ref().ends_with(".rs") {
@@ -43,6 +43,11 @@ fn wrap_service(service_file: PathBuf) -> Result<(), TonicPoolBuilderError> {
     if !service_file.exists() {
         return Err(());
     }
+
+    let proto_module = Ident::new(service_file
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or(())?, Span::call_site());
 
     let contents = fs::read_to_string(&service_file).map_err(|_| ())?;
 
@@ -63,8 +68,7 @@ fn wrap_service(service_file: PathBuf) -> Result<(), TonicPoolBuilderError> {
                 });
             quote! {
                 pub mod #module_ident {
-                    // todo: don't hardcode this. Need a nicer way to get the path to the original client.
-                    use super::super::health::#module_ident::*;
+                    use super::super::#proto_module::#module_ident::*;
                     #(
                         #pooled_clients
                     )*
