@@ -1,7 +1,4 @@
-use std::{
-    cmp::min, collections::BinaryHeap, mem::replace, net::IpAddr, ops::Deref, sync::PoisonError,
-    time::Duration,
-};
+use std::{cmp::min, collections::BinaryHeap, net::IpAddr, ops::Deref, time::Duration};
 
 use chrono::{DateTime, Timelike, Utc};
 use tokio::{
@@ -28,41 +25,33 @@ impl BrokenEndpoints {
     ///
     /// Note: While calling replace or swap on the `BrokenEndpoints` itself won't cause an error,
     /// it also won't notify the waiting threads about the change.
-    pub(crate) async fn replace_with(
-        &self,
-        new: BinaryHeap<DelayedAddress>,
-    ) -> Result<(), BrokenEndpointsError> {
-        let has_broken = !new.is_empty();
-        let _ = replace(&mut *self.addresses.lock().await, new);
-        if has_broken {
+    pub(crate) async fn replace_with(&self, new: BinaryHeap<DelayedAddress>) {
+        let mut guard = self.addresses.lock().await;
+        *guard = new;
+        if !guard.is_empty() {
             self.notifier.notify_one();
         }
-        Ok(())
     }
 
-    pub(crate) async fn get_entry(
-        &self,
-        address: IpAddr,
-    ) -> Result<Option<DelayedAddress>, BrokenEndpointsError> {
-        Ok(self
-            .addresses
+    pub(crate) async fn get_entry(&self, address: IpAddr) -> Option<DelayedAddress> {
+        self.addresses
             .lock()
             .await
             .iter()
             .find(|(_, addr)| *addr == address)
-            .copied())
+            .copied()
     }
 
-    pub(crate) async fn add_address(&self, address: IpAddr) -> Result<(), BrokenEndpointsError> {
+    pub(crate) async fn add_address(&self, address: IpAddr) {
         self.add_address_with_backoff(address, BackoffTracker::from_failed_times(1))
-            .await
+            .await;
     }
 
     pub(crate) async fn add_address_with_backoff(
         &self,
         address: IpAddr,
         last_backoff: BackoffTracker,
-    ) -> Result<(), BrokenEndpointsError> {
+    ) {
         let next_test_time =
             BackoffTracker::from_failed_times(last_backoff.failed_times().saturating_add(1));
         let mut guard = self.addresses.lock().await;
@@ -70,15 +59,12 @@ impl BrokenEndpoints {
             guard.push((next_test_time, address));
             self.notifier.notify_one();
         }
-        Ok(())
     }
 
     /// Returns the next broken IP address that should be tested.
     ///
     /// Warning: This function will block until the next broken IP address is available or `max_wait_duration` has passed.
-    pub(crate) async fn next_broken_ip_address(
-        &self,
-    ) -> Result<(IpAddr, BackoffTracker), BrokenEndpointsError> {
+    pub(crate) async fn next_broken_ip_address(&self) -> (IpAddr, BackoffTracker) {
         // let max_end_wait = Utc::now() + max_wait_duration;
         loop {
             let mut guard = self.addresses.lock().await;
@@ -98,7 +84,7 @@ impl BrokenEndpoints {
                     let entry = guard.pop().expect(
                         "peeked an element while holding the same mutex guard, so pop cannot fail",
                     );
-                    return Ok((entry.1, entry.0));
+                    return (entry.1, entry.0);
                 }
             } else {
                 drop(guard);
@@ -109,17 +95,6 @@ impl BrokenEndpoints {
 
     pub(crate) async fn addresses(&self) -> impl Deref<Target = BinaryHeap<DelayedAddress>> + Send {
         self.addresses.lock().await
-    }
-}
-
-#[derive(Debug)]
-pub enum BrokenEndpointsError {
-    BrokenLock,
-}
-
-impl<T> From<PoisonError<T>> for BrokenEndpointsError {
-    fn from(_: PoisonError<T>) -> Self {
-        BrokenEndpointsError::BrokenLock
     }
 }
 

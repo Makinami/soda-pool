@@ -17,5 +17,5 @@ pub use retry::*;
 #[doc(hidden)]
 pub mod deps;
 
-pub mod error;
 mod macros;
+mod ready_channels;
