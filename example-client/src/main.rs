@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use auto_discovery::EndpointTemplate;
-use example_protobuf::WrappedClient;
+use example_protobuf::health_pool::health_client::HealthClientPool;
 use tokio::{task::JoinSet, time::interval};
 use tracing::info;
 use url::Url;
@@ -12,7 +12,7 @@ async fn main() {
     colog::init();
 
     let template = EndpointTemplate::new(Url::parse("http://localhost:50001").unwrap()).unwrap();
-    let client = WrappedClient::new(template).await;
+    let client = HealthClientPool::new(template).await;
 
     for _ in 0..4 {
         let client = client.clone();

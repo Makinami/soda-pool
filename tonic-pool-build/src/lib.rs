@@ -3,7 +3,7 @@ use std::{
 };
 
 use proc_macro2::{Span, TokenStream};
-use syn::{parse_file, parse_quote, Ident, Item, ItemMod, PathSegment, Stmt};
+use syn::{parse_file, parse_quote, Ident, Item, ItemMod, PathSegment, Receiver, Stmt};
 use tracing::{debug, info};
 use quote::quote;
 
@@ -221,11 +221,18 @@ fn wrap_client(impl_item: &syn::ItemImpl) -> TokenStream {
 
 fn generate_method(method: &syn::ImplItemFn, client_name: &Ident) -> TokenStream {
     let fn_vis = &method.vis;
-    let fn_sig = &method.sig;
+    let mut fn_sig = method.sig.clone();
     let fn_name = &fn_sig.ident;
 
+
+    match fn_sig.inputs.first_mut() {
+        Some(syn::FnArg::Receiver(recv)) => {
+            *recv = remove_ref_from_receiver(recv.clone());
+        }
+        _ => panic!("Expected first argument to be a receiver"),
+    }
+
     quote! {
-        // todo: Remove mut from self
         #fn_vis #fn_sig {
             let (metadata, extensions, message) = request.into_request().into_parts();
             loop {
@@ -258,4 +265,15 @@ fn generate_method(method: &syn::ImplItemFn, client_name: &Ident) -> TokenStream
             }
         }
     }
+}
+
+fn remove_ref_from_receiver(mut recv: Receiver) -> Receiver {
+    recv.mutability = None;
+    match *recv.ty {
+        syn::Type::Reference(ref mut ref_type) => {
+            ref_type.mutability = None;
+        },
+        _ => {}
+    }
+    recv
 }

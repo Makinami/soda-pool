@@ -104,7 +104,7 @@ pub mod echo_client {
     }
     impl EchoClientPool {
         pub async fn echo_message(
-            &mut self,
+            &self,
             request: impl tonic::IntoRequest<super::EchoRequest>,
         ) -> std::result::Result<tonic::Response<super::EchoResponse>, tonic::Status> {
             let (metadata, extensions, message) = request.into_request().into_parts();
