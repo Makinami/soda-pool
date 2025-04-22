@@ -42,8 +42,20 @@ pub mod health_client {
             tonic::Response<super::IsAliveResponse>,
             tonic::Status,
         > {
+            self.is_alive_with_retry::<::auto_discovery::DefaultRetryPolicy>(request)
+                .await
+        }
+        pub async fn is_alive_with_retry<RP: ::auto_discovery::RetryPolicy>(
+            &self,
+            request: impl tonic::IntoRequest<()>,
+        ) -> std::result::Result<
+            tonic::Response<super::IsAliveResponse>,
+            tonic::Status,
+        > {
             let (metadata, extensions, message) = request.into_request().into_parts();
+            let mut tries = 0;
             loop {
+                tries += 1;
                 let (ip_address, channel) = self.get_channel().await?;
                 let request = tonic::Request::from_parts(
                     metadata.clone(),
@@ -56,10 +68,25 @@ pub mod health_client {
                         return Ok(response);
                     }
                     Err(e) => {
-                        if std::error::Error::source(&e).is_some() {
-                            self.report_broken(ip_address).await;
-                        } else {
-                            return Err(e.into());
+                        let ::auto_discovery::RetryCheckResult(
+                            server_status,
+                            retry_time,
+                        ) = RP::should_retry(&e, tries);
+                        if matches!(
+                            server_status, ::auto_discovery::ServerStatus::Dead
+                        ) {
+                            self.report_broken(ip_address).await?;
+                        }
+                        match retry_time {
+                            ::auto_discovery::RetryTime::DoNotRetry => {
+                                return Err(e);
+                            }
+                            ::auto_discovery::RetryTime::Immediately => {
+                                continue;
+                            }
+                            ::auto_discovery::RetryTime::After(duration) => {
+                                ::auto_discovery::deps::sleep(duration).await;
+                            }
                         }
                     }
                 }
@@ -107,8 +134,17 @@ pub mod echo_client {
             &self,
             request: impl tonic::IntoRequest<super::EchoRequest>,
         ) -> std::result::Result<tonic::Response<super::EchoResponse>, tonic::Status> {
+            self.echo_message_with_retry::<::auto_discovery::DefaultRetryPolicy>(request)
+                .await
+        }
+        pub async fn echo_message_with_retry<RP: ::auto_discovery::RetryPolicy>(
+            &self,
+            request: impl tonic::IntoRequest<super::EchoRequest>,
+        ) -> std::result::Result<tonic::Response<super::EchoResponse>, tonic::Status> {
             let (metadata, extensions, message) = request.into_request().into_parts();
+            let mut tries = 0;
             loop {
+                tries += 1;
                 let (ip_address, channel) = self.get_channel().await?;
                 let request = tonic::Request::from_parts(
                     metadata.clone(),
@@ -121,10 +157,25 @@ pub mod echo_client {
                         return Ok(response);
                     }
                     Err(e) => {
-                        if std::error::Error::source(&e).is_some() {
-                            self.report_broken(ip_address).await;
-                        } else {
-                            return Err(e.into());
+                        let ::auto_discovery::RetryCheckResult(
+                            server_status,
+                            retry_time,
+                        ) = RP::should_retry(&e, tries);
+                        if matches!(
+                            server_status, ::auto_discovery::ServerStatus::Dead
+                        ) {
+                            self.report_broken(ip_address).await?;
+                        }
+                        match retry_time {
+                            ::auto_discovery::RetryTime::DoNotRetry => {
+                                return Err(e);
+                            }
+                            ::auto_discovery::RetryTime::Immediately => {
+                                continue;
+                            }
+                            ::auto_discovery::RetryTime::After(duration) => {
+                                ::auto_discovery::deps::sleep(duration).await;
+                            }
                         }
                     }
                 }

@@ -78,7 +78,7 @@ fn wrap_service(service_file: PathBuf) -> Result<(), TonicPoolBuilderError> {
 
     let gen_module_name = service_file.file_stem().unwrap().to_str().unwrap();
     let gen_module_ident = Ident::new(gen_module_name, Span::call_site());
-println!("gen_module_name: {gen_module_name}");
+
     let wrapped_clients = quote! {
         use super::#gen_module_ident::*;
 
@@ -224,22 +224,37 @@ fn wrap_client(impl_item: &syn::ItemImpl) -> TokenStream {
 }
 
 fn generate_method(method: &syn::ImplItemFn, client_name: &Ident) -> TokenStream {
-    let fn_vis = &method.vis;
-    let mut fn_sig = method.sig.clone();
+    let fn_sig = method.sig.clone();
+    let mut fn_inputs = fn_sig.inputs.clone();
+
     let fn_name = &fn_sig.ident;
+    let fn_retry_name = Ident::new(&format!("{}_with_retry", fn_name), Span::call_site());
 
-
-    match fn_sig.inputs.first_mut() {
+    match fn_inputs.first_mut() {
         Some(syn::FnArg::Receiver(recv)) => {
             *recv = remove_ref_from_receiver(recv.clone());
         }
         _ => panic!("Expected first argument to be a receiver"),
     }
+    let fn_return = &fn_sig.output;
+
+    let mut retry_sig = fn_sig.clone();
+    retry_sig.ident = Ident::new(&format!("{}_with_retry", fn_name), Span::call_site());
+    retry_sig.generics = syn::Generics::default();
 
     quote! {
-        #fn_vis #fn_sig {
+        pub async fn #fn_name(#fn_inputs) #fn_return {
+            self. #fn_retry_name ::<::auto_discovery::DefaultRetryPolicy>(
+                request,
+            ).await
+        }
+
+        pub async fn #fn_retry_name <RP: ::auto_discovery::RetryPolicy>(#fn_inputs) #fn_return {
             let (metadata, extensions, message) = request.into_request().into_parts();
+            let mut tries = 0;
             loop {
+                tries += 1;
+
                 // Get channel of random index.
                 let (ip_address, channel) = self.get_channel().await?;
 
@@ -255,14 +270,26 @@ fn generate_method(method: &syn::ImplItemFn, client_name: &Ident) -> TokenStream
                         return Ok(response);
                     }
                     Err(e) => {
-                        // Initial tests suggest that source of the error is set only when it comes from the library (e.g. connection refused).
-                        if std::error::Error::source(&e).is_some() {
-                            // If the error happened because the channel is dead (e.g. connection refused),
-                            // add the address to broken endpoints and retry request thought another channel.
-                            self.report_broken(ip_address).await;
-                        } else {
-                            // All errors that come from the server are not errors in a sense of connection problems so they don't set source.
-                            return Err(e.into());
+                        let ::auto_discovery::RetryCheckResult(server_status, retry_time) = RP::should_retry(&e, tries);
+                        if matches!(server_status, ::auto_discovery::ServerStatus::Dead) {
+                            // If the server is dead, we should report it.
+                            self.report_broken(ip_address).await?;
+                        }
+
+                        match retry_time {
+                            ::auto_discovery::RetryTime::DoNotRetry => {
+                                // Do not retry and do not report broken endpoint.
+                                return Err(e);
+                            }
+                            ::auto_discovery::RetryTime::Immediately => {
+                                // Retry immediately.
+                                continue;
+                            }
+                            ::auto_discovery::RetryTime::After(duration) => {
+                                // Wait for the specified duration before retrying.
+                                // todo-interface: Don't require client to have tokio dependency.
+                                ::auto_discovery::deps::sleep(duration).await;
+                            }
                         }
                     }
                 }
