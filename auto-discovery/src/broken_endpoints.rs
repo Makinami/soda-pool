@@ -67,22 +67,21 @@ impl BrokenEndpoints {
         self.add_address_with_current_fail_count(address, 1).await;
     }
 
-    pub(crate) async fn readd_address(&self, address: DelayedAddress) {
-        self.add_address_with_current_fail_count(*address, address.failed_times())
+    pub(crate) async fn re_add_address(&self, address: DelayedAddress) {
+        self.add_address_with_current_fail_count(*address, address.failed_times() + 1)
             .await;
     }
 
-    pub(crate) async fn add_address_with_current_fail_count(
+    async fn add_address_with_current_fail_count(
         &self,
         address: IpAddr,
         current_fail_count: u8,
     ) {
         let next_test_time = BackoffTracker::from_failed_times(current_fail_count);
         let mut guard = self.addresses.lock().await;
-        if !guard.iter().any(|DelayedAddress(_, addr)| *addr == address) {
-            guard.push(DelayedAddress(next_test_time, address));
-            self.notifier.notify_one();
-        }
+        guard.retain(|DelayedAddress(_, addr)| *addr != address);
+        guard.push(DelayedAddress(next_test_time, address));
+        self.notifier.notify_one();
     }
 
     /// Returns the next broken IP address that should be tested.
@@ -146,7 +145,7 @@ impl BackoffTracker {
 // The current strategy is to wait 2^(failed_times-1) seconds before retrying.
 // The maximum wait time is 2^6 = 64 seconds (~1 minutes).
 fn calculate_backoff(failed_times: u8) -> Duration {
-    let failed_times = min(failed_times - 1, 6);
+    let failed_times = min(failed_times.saturating_sub(1), 6);
     Duration::from_secs(2u64.pow(u32::from(failed_times)))
 }
 
@@ -162,4 +161,153 @@ fn set_retires(timestamp: DateTime<Utc>, failed_times: u8) -> DateTime<Utc> {
 
 fn get_retires(timestamp: DateTime<Utc>) -> u8 {
     (timestamp.nanosecond() & 0xFF) as u8
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use chrono::TimeDelta;
+
+    use super::*;
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn retries(#[values(0, 1, 2, 4, 16, 255)] i: u8) {
+        let datetime = Utc::now();
+        let actual = set_retires(datetime, i);
+        let time_diff = (actual - datetime).abs();
+
+        assert_eq!(get_retires(actual), i);
+        assert!(time_diff.num_nanoseconds().unwrap() <= 1000);
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[case(0, Duration::from_secs(1))]
+    #[case(1, Duration::from_secs(1))]
+    #[case(2, Duration::from_secs(2))]
+    #[case(4, Duration::from_secs(8))]
+    #[case(7, Duration::from_secs(64))]
+    #[case(8, Duration::from_secs(64))]
+    #[case(16, Duration::from_secs(64))]
+    #[case(255, Duration::from_secs(64))]
+    async fn backoff(#[case] fail_count: u8, #[case] expected: Duration) {
+        let actual = calculate_backoff(fail_count);
+        assert_eq!(actual, expected);
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[case(0, TimeDelta::seconds(1))]
+    #[case(1, TimeDelta::seconds(1))]
+    #[case(2, TimeDelta::seconds(2))]
+    #[case(4, TimeDelta::seconds(8))]
+    #[case(7, TimeDelta::seconds(64))]
+    #[case(8, TimeDelta::seconds(64))]
+    #[case(16, TimeDelta::seconds(64))]
+    #[case(255, TimeDelta::seconds(64))]
+    async fn tracker(#[case] fail_count: u8, #[case] expected_delay: TimeDelta) {
+        let start = Utc::now();
+        let backoff_tracker = BackoffTracker::from_failed_times(fail_count);
+        let time_diff = (backoff_tracker.next_test_time() - start).abs();
+
+        assert_eq!(backoff_tracker.failed_times(), fail_count);
+        assert!((time_diff - expected_delay).abs() < TimeDelta::nanoseconds(1000));
+    }
+
+    mod delayed_address {
+        use super::*;
+
+        #[test]
+        fn from_ip_address() {
+            let ip_address = IpAddr::from([127, 0, 0, 1]);
+            let delayed_address = DelayedAddress::from(ip_address);
+            assert_eq!(delayed_address.failed_times(), 1);
+            assert_eq!(*delayed_address, ip_address);
+        }
+
+        #[test]
+        fn failed_times() {
+            let ip_address = IpAddr::from([127, 0, 0, 1]);
+            let delayed_address = DelayedAddress(BackoffTracker::from_failed_times(3), ip_address);
+            assert_eq!(delayed_address.failed_times(), 3);
+            assert_eq!(*delayed_address, ip_address);
+        }
+
+        #[test]
+        fn deref() {
+            let ip_address = IpAddr::from([127, 0, 0, 1]);
+            let delayed_address = DelayedAddress(BackoffTracker::from_failed_times(3), ip_address);
+            assert_eq!(*delayed_address, ip_address);
+        }
+    }
+
+    mod broken_endpoints {
+        use std::{net::{Ipv4Addr, Ipv6Addr}, vec};
+
+        use super::*;
+
+        #[tokio::test]
+        async fn get_address() {
+            let broken_endpoints = BrokenEndpoints::default();
+            broken_endpoints.add_address(Ipv4Addr::LOCALHOST.into()).await;
+            broken_endpoints.add_address(Ipv6Addr::LOCALHOST.into()).await;
+
+            let actual = broken_endpoints
+                .get_address(Ipv4Addr::LOCALHOST.into())
+                .await
+                .unwrap();
+
+            assert_eq!(actual.failed_times(), 1);
+            assert_eq!(*actual, IpAddr::from(Ipv4Addr::LOCALHOST));
+
+            assert!(
+                broken_endpoints
+                    .get_address([127, 0, 0, 2].into())
+                    .await.is_none()
+            );
+        }
+
+        #[tokio::test]
+        async fn add_address() {
+            let broken_endpoints = BrokenEndpoints::default();
+            let address = Ipv4Addr::LOCALHOST.into();
+            broken_endpoints.add_address(address).await;
+
+            let actual = broken_endpoints.get_address(address).await.unwrap();
+            assert_eq!(actual.failed_times(), 1);
+        }
+
+        #[tokio::test]
+        async fn re_add_address() {
+            let broken_endpoints = BrokenEndpoints::default();
+            let address = Ipv4Addr::LOCALHOST.into();
+            broken_endpoints.add_address(address).await;
+            let first = broken_endpoints.get_address(address).await.unwrap();
+            broken_endpoints.re_add_address(first).await;
+            let actual = broken_endpoints.get_address(address).await.unwrap();
+            assert_eq!(actual.failed_times(), 2);
+        }
+
+        #[tokio::test]
+        async fn addresses() {
+            let broken_endpoints = BrokenEndpoints::default();
+            let address1 = Ipv4Addr::from([10, 0, 0, 1]).into();
+            let address2 = Ipv4Addr::from([192, 168, 1, 1]).into();
+
+            broken_endpoints.add_address(address1).await;
+            broken_endpoints.add_address(address2).await;
+
+            let guard = broken_endpoints.addresses().await;
+            let addresses = guard.iter().collect::<Vec<_>>();
+
+            assert!(addresses.iter().all(|address| {
+                address.failed_times() == 1
+            }));
+
+            let mut actual = addresses.into_iter().map(Deref::deref).collect::<Vec<_>>();
+            actual.sort();
+            assert_eq!(actual, vec![&address1, &address2]);
+        }
+    }
 }

@@ -164,7 +164,7 @@ async fn recheck_broken_endpoint(
         ready_clients.add(*address, channel).await;
     } else {
         debug!("Can't connect to {:?}", *address);
-        broken_endpoints.readd_address(address).await;
+        broken_endpoints.re_add_address(address).await;
     }
 }
 
