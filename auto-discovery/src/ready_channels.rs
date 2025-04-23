@@ -50,3 +50,109 @@ impl ReadyChannels {
         *self.channels.write().await = new;
     }
 }
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    use tonic::transport::Endpoint;
+
+    use super::*;
+
+    fn default_channel() -> Channel {
+        Endpoint::from_static("http://localhost:8080").connect_lazy()
+    }
+
+    #[tokio::test]
+    async fn find() {
+        let ready_channels = ReadyChannels::default();
+        assert!(ready_channels.find(Ipv4Addr::LOCALHOST.into()).await.is_none());
+
+        ready_channels.add(Ipv6Addr::LOCALHOST.into(), default_channel()).await;
+        assert!(ready_channels.find(Ipv4Addr::LOCALHOST.into()).await.is_none());
+
+        ready_channels.add(Ipv4Addr::LOCALHOST.into(), default_channel()).await;
+        assert!(ready_channels.find(Ipv4Addr::LOCALHOST.into()).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn get_any() {
+        let ready_channels = ReadyChannels::default();
+        assert!(ready_channels.get_any().await.is_none());
+
+        for i in 0..128 {
+            ready_channels
+                .add(Ipv4Addr::new(127, 0, 0, i).into(), default_channel())
+                .await;
+        }
+
+        let mut found = vec![];
+        for _ in 0..10 {
+            if let Some((ip, _)) = ready_channels.get_any().await {
+                found.push(ip);
+            } else {
+                panic!("No channels found");
+            }
+        }
+        found.sort();
+        found.dedup();
+
+        assert!(found.len() > 1);
+    }
+
+    #[tokio::test]
+    async fn add() {
+        let ready_channels = ReadyChannels::default();
+        assert!(ready_channels.channels.read().await.is_empty());
+
+        ready_channels.add(Ipv4Addr::LOCALHOST.into(), default_channel()).await;
+        assert_eq!(ready_channels.channels.read().await.len(), 1);
+
+        ready_channels.add(Ipv6Addr::LOCALHOST.into(), default_channel()).await;
+        assert_eq!(ready_channels.channels.read().await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn remove() {
+        let ready_channels = ReadyChannels::default();
+        ready_channels.add(Ipv4Addr::LOCALHOST.into(), default_channel()).await;
+        ready_channels.add(Ipv6Addr::LOCALHOST.into(), default_channel()).await;
+
+        assert_eq!(ready_channels.channels.read().await.len(), 2);
+
+        ready_channels.remove(Ipv4Addr::new(127, 0, 0, 2).into()).await;
+        assert_eq!(ready_channels.channels.read().await.len(), 2);
+
+        ready_channels.remove(Ipv4Addr::LOCALHOST.into()).await;
+        assert_eq!(ready_channels.channels.read().await.len(), 1);
+        assert!(ready_channels.find(Ipv4Addr::LOCALHOST.into()).await.is_none());
+
+        ready_channels.remove(Ipv6Addr::LOCALHOST.into()).await;
+        assert!(ready_channels.channels.read().await.is_empty());
+        assert!(ready_channels.find(Ipv6Addr::LOCALHOST.into()).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn replace_with() {
+        let ready_channels = ReadyChannels::default();
+        ready_channels.add(Ipv4Addr::LOCALHOST.into(), default_channel()).await;
+        ready_channels.add(Ipv6Addr::LOCALHOST.into(), default_channel()).await;
+
+        assert_eq!(ready_channels.channels.read().await.len(), 2);
+
+        let new = vec![
+            (Ipv4Addr::new(127, 0, 0, 2).into(), default_channel()),
+            (Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 2).into(), default_channel()),
+        ];
+        ready_channels.replace_with(new.clone()).await;
+
+        {
+            let guard = ready_channels.channels.read().await;
+            assert_eq!(
+                guard.iter().map(|(ip, _)| *ip).collect::<Vec<_>>(),
+                new.iter().map(|(ip, _)| *ip).collect::<Vec<_>>(),
+            );
+        }
+    }
+}
