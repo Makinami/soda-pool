@@ -60,6 +60,9 @@ mod tests {
 
     use super::*;
 
+    const LOCALHOST_V4: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+    const LOCALHOST_V6: IpAddr = IpAddr::V6(Ipv6Addr::LOCALHOST);
+
     fn default_channel() -> Channel {
         Endpoint::from_static("http://localhost:8080").connect_lazy()
     }
@@ -67,13 +70,13 @@ mod tests {
     #[tokio::test]
     async fn find() {
         let ready_channels = ReadyChannels::default();
-        assert!(ready_channels.find(Ipv4Addr::LOCALHOST.into()).await.is_none());
+        assert!(ready_channels.find(LOCALHOST_V4).await.is_none());
 
-        ready_channels.add(Ipv6Addr::LOCALHOST.into(), default_channel()).await;
-        assert!(ready_channels.find(Ipv4Addr::LOCALHOST.into()).await.is_none());
+        ready_channels.add(LOCALHOST_V6, default_channel()).await;
+        assert!(ready_channels.find(LOCALHOST_V4).await.is_none());
 
-        ready_channels.add(Ipv4Addr::LOCALHOST.into(), default_channel()).await;
-        assert!(ready_channels.find(Ipv4Addr::LOCALHOST.into()).await.is_some());
+        ready_channels.add(LOCALHOST_V4, default_channel()).await;
+        assert!(ready_channels.find(LOCALHOST_V4).await.is_some());
     }
 
     #[tokio::test]
@@ -106,44 +109,44 @@ mod tests {
         let ready_channels = ReadyChannels::default();
         assert!(ready_channels.channels.read().await.is_empty());
 
-        ready_channels.add(Ipv4Addr::LOCALHOST.into(), default_channel()).await;
+        ready_channels.add(LOCALHOST_V4, default_channel()).await;
         assert_eq!(ready_channels.channels.read().await.len(), 1);
 
-        ready_channels.add(Ipv6Addr::LOCALHOST.into(), default_channel()).await;
+        ready_channels.add(LOCALHOST_V6, default_channel()).await;
         assert_eq!(ready_channels.channels.read().await.len(), 2);
     }
 
     #[tokio::test]
     async fn remove() {
         let ready_channels = ReadyChannels::default();
-        ready_channels.add(Ipv4Addr::LOCALHOST.into(), default_channel()).await;
-        ready_channels.add(Ipv6Addr::LOCALHOST.into(), default_channel()).await;
+        ready_channels.add(LOCALHOST_V4, default_channel()).await;
+        ready_channels.add(LOCALHOST_V6, default_channel()).await;
 
         assert_eq!(ready_channels.channels.read().await.len(), 2);
 
-        ready_channels.remove(Ipv4Addr::new(127, 0, 0, 2).into()).await;
+        ready_channels.remove([127, 0, 0, 2].into()).await;
         assert_eq!(ready_channels.channels.read().await.len(), 2);
 
-        ready_channels.remove(Ipv4Addr::LOCALHOST.into()).await;
+        ready_channels.remove(LOCALHOST_V4).await;
         assert_eq!(ready_channels.channels.read().await.len(), 1);
-        assert!(ready_channels.find(Ipv4Addr::LOCALHOST.into()).await.is_none());
+        assert!(ready_channels.find(LOCALHOST_V4).await.is_none());
 
-        ready_channels.remove(Ipv6Addr::LOCALHOST.into()).await;
+        ready_channels.remove(LOCALHOST_V6).await;
         assert!(ready_channels.channels.read().await.is_empty());
-        assert!(ready_channels.find(Ipv6Addr::LOCALHOST.into()).await.is_none());
+        assert!(ready_channels.find(LOCALHOST_V6).await.is_none());
     }
 
     #[tokio::test]
     async fn replace_with() {
         let ready_channels = ReadyChannels::default();
-        ready_channels.add(Ipv4Addr::LOCALHOST.into(), default_channel()).await;
-        ready_channels.add(Ipv6Addr::LOCALHOST.into(), default_channel()).await;
+        ready_channels.add(LOCALHOST_V4, default_channel()).await;
+        ready_channels.add(LOCALHOST_V6, default_channel()).await;
 
         assert_eq!(ready_channels.channels.read().await.len(), 2);
 
         let new = vec![
-            (Ipv4Addr::new(127, 0, 0, 2).into(), default_channel()),
-            (Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 2).into(), default_channel()),
+            ([127, 0, 0, 2].into(), default_channel()),
+            ([0, 0, 0, 0, 0, 0, 0, 2].into(), default_channel()),
         ];
         ready_channels.replace_with(new.clone()).await;
 
