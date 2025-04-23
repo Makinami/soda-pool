@@ -363,4 +363,94 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), expected);
     }
+
+    #[rstest::rstest]
+    #[case("http://example.com:50051/foo", Ok("example.com"))]
+    #[case("http://127.0.0.1:50051", Err(Error::AlreadyIpAddress))]
+    #[case("http://[::1]:50051", Err(Error::AlreadyIpAddress))]
+    #[case("mailto:admin@example.com", Err(Error::HostMissing))]
+    fn from_trait(#[case] url: &str, #[case] expected: Result<&str, Error>) {
+        let url = Url::parse(url).unwrap();
+        let result = EndpointTemplate::try_from(url.clone());
+        let domain = result.as_ref().map(|builder| builder.domain());
+        assert_eq!(domain, expected.as_deref());
+    }
+
+    #[test]
+    fn setters() {
+        let url = Url::parse("http://example.com:50051/foo").unwrap();
+        let builder = EndpointTemplate::new(url.clone()).unwrap();
+
+        let origin = Uri::from_str("http://example.net:50001").unwrap();
+        let builder = builder.origin(origin.clone());
+        assert_eq!(builder.origin, Some(origin));
+
+        let user_agent = HeaderValue::from_str("my-user-agent").unwrap();
+        let builder = builder.user_agent(user_agent.clone()).unwrap();
+        assert_eq!(builder.user_agent, Some(user_agent));
+
+        let duration = Duration::from_secs(10);
+        let builder = builder.timeout(duration);
+        assert_eq!(builder.timeout, Some(duration));
+
+        let connect_timeout = Duration::from_secs(5);
+        let builder = builder.connect_timeout(connect_timeout);
+        assert_eq!(builder.connect_timeout, Some(connect_timeout));
+
+        let tcp_keepalive = Some(Duration::from_secs(30));
+        let builder = builder.tcp_keepalive(tcp_keepalive);
+        assert_eq!(builder.tcp_keepalive, tcp_keepalive);
+
+        let concurrency_limit = 10;
+        let builder = builder.concurrency_limit(concurrency_limit);
+        assert_eq!(builder.concurrency_limit, Some(concurrency_limit));
+
+        let rate_limit = (100, Duration::from_secs(1));
+        let builder = builder.rate_limit(rate_limit.0, rate_limit.1);
+        assert_eq!(builder.rate_limit, Some(rate_limit));
+
+        let init_stream_window_size = Some(64);
+        let builder = builder.initial_stream_window_size(init_stream_window_size);
+        assert_eq!(builder.init_stream_window_size, init_stream_window_size);
+
+        let init_connection_window_size = Some(128);
+        let builder = builder.initial_connection_window_size(init_connection_window_size);
+        assert_eq!(
+            builder.init_connection_window_size,
+            init_connection_window_size
+        );
+
+        let buffer_size = Some(1024);
+        let builder = builder.buffer_size(buffer_size);
+        assert_eq!(builder.buffer_size, buffer_size);
+
+        let tcp_nodelay = true;
+        let builder = builder.tcp_nodelay(tcp_nodelay);
+        assert_eq!(builder.tcp_nodelay, Some(tcp_nodelay));
+
+        let http2_keep_alive_interval = Duration::from_secs(30);
+        let builder = builder.http2_keep_alive_interval(http2_keep_alive_interval);
+        assert_eq!(
+            builder.http2_keep_alive_interval,
+            Some(http2_keep_alive_interval)
+        );
+
+        let keep_alive_timeout = Duration::from_secs(60);
+        let builder = builder.keep_alive_timeout(keep_alive_timeout);
+        assert_eq!(builder.http2_keep_alive_timeout, Some(keep_alive_timeout));
+
+        let keep_alive_while_idle = true;
+        let builder = builder.keep_alive_while_idle(keep_alive_while_idle);
+        assert_eq!(
+            builder.http2_keep_alive_while_idle,
+            Some(keep_alive_while_idle)
+        );
+
+        let http2_adaptive_window = true;
+        let builder = builder.http2_adaptive_window(http2_adaptive_window);
+        assert_eq!(
+            builder.http2_adaptive_window,
+            Some(http2_adaptive_window)
+        );
+    }
 }
