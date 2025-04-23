@@ -1,3 +1,7 @@
+#![allow(unexpected_cfgs)]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#![cfg_attr(coverage_nightly, coverage(off))]
+
 use std::time::Duration;
 
 use auto_discovery::{EndpointTemplate, RetryCheckResult, RetryTime, ServerStatus};
