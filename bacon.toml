@@ -117,5 +117,5 @@ on_change_strategy = "kill_then_restart"
 allow_warnings = true
 
 [jobs.coverage]
-command = ["cargo", "+nightly", "llvm-cov", "--html"]
+command = ["cargo", "+nightly", "llvm-cov", "nextest", "--html"]
 on_change_strategy = "kill_then_restart"

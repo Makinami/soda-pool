@@ -1,3 +1,7 @@
+#![allow(unexpected_cfgs)]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#![cfg_attr(coverage_nightly, coverage(off))]
+
 fn main() {
     let mut config = prost_build::Config::new();
     config.protoc_arg("--experimental_allow_proto3_optional");

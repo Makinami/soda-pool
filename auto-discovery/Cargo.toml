@@ -6,7 +6,7 @@ edition = { workspace = true }
 [dependencies]
 http = { workspace = true }
 rand = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 tokio-util = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }

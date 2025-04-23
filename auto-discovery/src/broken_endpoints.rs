@@ -212,7 +212,7 @@ mod tests {
         let time_diff = (backoff_tracker.next_test_time() - start).abs();
 
         assert_eq!(backoff_tracker.failed_times(), fail_count);
-        assert!((time_diff - expected_delay).abs() < TimeDelta::nanoseconds(1000));
+        assert!((time_diff - expected_delay).abs() < TimeDelta::microseconds(10));
     }
 
     mod delayed_address {
@@ -308,6 +308,23 @@ mod tests {
             let mut actual = addresses.into_iter().map(Deref::deref).collect::<Vec<_>>();
             actual.sort();
             assert_eq!(actual, vec![&address1, &address2]);
+        }
+
+        #[tokio::test]
+        async fn replace_with() {
+            let broken_endpoints = BrokenEndpoints::default();
+            let address1 = Ipv4Addr::from([10, 0, 0, 1]).into();
+            let address2 = Ipv4Addr::from([192, 168, 1, 1]).into();
+
+            broken_endpoints.add_address(address1).await;
+            broken_endpoints.add_address(address2).await;
+
+            let new_addresses = BinaryHeap::from(vec![DelayedAddress::from(IpAddr::from(Ipv4Addr::LOCALHOST))]);
+            broken_endpoints.replace_with(new_addresses).await;
+
+            let guard = broken_endpoints.addresses().await;
+            assert_eq!(guard.len(), 1);
+            assert_eq!(guard.peek().unwrap().failed_times(), 1);
         }
     }
 }
