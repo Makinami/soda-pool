@@ -7,7 +7,28 @@ use tokio::{
     time::sleep,
 };
 
-type DelayedAddress = (BackoffTracker, IpAddr);
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
+pub(crate) struct DelayedAddress(BackoffTracker, IpAddr);
+
+impl DelayedAddress {
+    fn failed_times(&self) -> u8 {
+        self.0.failed_times()
+    }
+}
+
+impl From<IpAddr> for DelayedAddress {
+    fn from(ip_address: IpAddr) -> Self {
+        DelayedAddress(BackoffTracker::from_failed_times(1), ip_address)
+    }
+}
+
+impl Deref for DelayedAddress {
+    type Target = IpAddr;
+
+    fn deref(&self) -> &Self::Target {
+        &self.1
+    }
+}
 
 // Implementation using RwLock should be much nicer, but RwLock doesn't support CondVar.
 // Although untested, my current assumption is that broken endpoints will be rare enough
@@ -33,30 +54,33 @@ impl BrokenEndpoints {
         }
     }
 
-    pub(crate) async fn get_entry(&self, address: IpAddr) -> Option<DelayedAddress> {
+    pub(crate) async fn get_address(&self, address: IpAddr) -> Option<DelayedAddress> {
         self.addresses
             .lock()
             .await
             .iter()
-            .find(|(_, addr)| *addr == address)
+            .find(|DelayedAddress(_, addr)| *addr == address)
             .copied()
     }
 
     pub(crate) async fn add_address(&self, address: IpAddr) {
-        self.add_address_with_backoff(address, BackoffTracker::from_failed_times(1))
+        self.add_address_with_current_fail_count(address, 1).await;
+    }
+
+    pub(crate) async fn readd_address(&self, address: DelayedAddress) {
+        self.add_address_with_current_fail_count(*address, address.failed_times())
             .await;
     }
 
-    pub(crate) async fn add_address_with_backoff(
+    pub(crate) async fn add_address_with_current_fail_count(
         &self,
         address: IpAddr,
-        last_backoff: BackoffTracker,
+        current_fail_count: u8,
     ) {
-        let next_test_time =
-            BackoffTracker::from_failed_times(last_backoff.failed_times().saturating_add(1));
+        let next_test_time = BackoffTracker::from_failed_times(current_fail_count);
         let mut guard = self.addresses.lock().await;
-        if !guard.iter().any(|(_, addr)| *addr == address) {
-            guard.push((next_test_time, address));
+        if !guard.iter().any(|DelayedAddress(_, addr)| *addr == address) {
+            guard.push(DelayedAddress(next_test_time, address));
             self.notifier.notify_one();
         }
     }
@@ -64,12 +88,12 @@ impl BrokenEndpoints {
     /// Returns the next broken IP address that should be tested.
     ///
     /// Warning: This function will block until the next broken IP address is available or `max_wait_duration` has passed.
-    pub(crate) async fn next_broken_ip_address(&self) -> (IpAddr, BackoffTracker) {
+    pub(crate) async fn next_broken_ip_address(&self) -> DelayedAddress {
         // let max_end_wait = Utc::now() + max_wait_duration;
         loop {
             let mut guard = self.addresses.lock().await;
 
-            if let Some((instant, _)) = guard.peek() {
+            if let Some(DelayedAddress(instant, _)) = guard.peek() {
                 let now = Utc::now();
                 if now < instant.next_test_time() {
                     let durr = (instant.next_test_time() - now)
@@ -84,7 +108,7 @@ impl BrokenEndpoints {
                     let entry = guard.pop().expect(
                         "peeked an element while holding the same mutex guard, so pop cannot fail",
                     );
-                    return (entry.1, entry.0);
+                    return entry;
                 }
             } else {
                 drop(guard);

@@ -12,7 +12,7 @@ use tonic::transport::Channel;
 use tracing::{debug, trace};
 
 use crate::{
-    broken_endpoints::{BackoffTracker, BrokenEndpoints},
+    broken_endpoints::{BrokenEndpoints, DelayedAddress},
     dns::resolve_domain,
     endpoint_template::EndpointTemplate,
     ready_channels::ReadyChannels,
@@ -81,10 +81,8 @@ impl WrappedClientBuilder {
             tokio::spawn(async move {
                 loop {
                     // There is an asynchronous wait inside this function so we can run it in a tight loop here.
-                    let (ip_address, backoff) = broken_endpoints.next_broken_ip_address().await;
                     recheck_broken_endpoint(
-                        ip_address,
-                        backoff,
+                        broken_endpoints.next_broken_ip_address().await,
                         &endpoint,
                         &ready_clients,
                         &broken_endpoints,
@@ -133,7 +131,7 @@ async fn check_dns(
         }
 
         // Skip if the address is already in broken_endpoints.
-        if let Some(entry) = broken_endpoints.get_entry(address).await {
+        if let Some(entry) = broken_endpoints.get_address(address).await {
             trace!("Skipping {:?} as already broken", address);
             broken.push(entry);
             continue;
@@ -144,7 +142,7 @@ async fn check_dns(
         if let Ok(channel) = channel {
             ready.push((address, channel));
         } else {
-            broken.push((BackoffTracker::from_failed_times(1), address));
+            broken.push(address.into());
         }
     }
 
@@ -154,22 +152,19 @@ async fn check_dns(
 }
 
 async fn recheck_broken_endpoint(
-    ip_address: IpAddr,
-    backoff: BackoffTracker,
+    address: DelayedAddress,
     endpoint: &EndpointTemplate,
     ready_clients: &ReadyChannels,
     broken_endpoints: &BrokenEndpoints,
 ) {
-    let connection_test_result = endpoint.build(ip_address).connect().await;
+    let connection_test_result = endpoint.build(*address).connect().await;
 
     if let Ok(channel) = connection_test_result {
-        debug!("Connection established to {:?}", ip_address);
-        ready_clients.add(ip_address, channel).await;
+        debug!("Connection established to {:?}", *address);
+        ready_clients.add(*address, channel).await;
     } else {
-        debug!("Can't connect to {:?}", ip_address);
-        broken_endpoints
-            .add_address_with_backoff(ip_address, backoff)
-            .await;
+        debug!("Can't connect to {:?}", *address);
+        broken_endpoints.readd_address(address).await;
     }
 }
 
@@ -229,10 +224,7 @@ impl WrappedClient {
             }
             Err(_) => {
                 let _ = RECHECK_BROKEN_ENDPOINTS.write().await;
-                return self
-                    .ready_clients
-                    .get_any()
-                    .await;
+                return self.ready_clients.get_any().await;
             }
         };
 
@@ -241,19 +233,17 @@ impl WrappedClient {
         let mut fut = FuturesUnordered::new();
         fut.push(
             async {
-                check_dns(&self.template, &self.ready_clients, &self.broken_endpoints)
-                    .await;
+                check_dns(&self.template, &self.ready_clients, &self.broken_endpoints).await;
                 self.ready_clients.get_any().await
             }
             .boxed(),
         );
 
-        for (backoff, ip_address) in self.broken_endpoints.addresses().await.iter().copied() {
+        for address in self.broken_endpoints.addresses().await.iter().copied() {
             fut.push(
                 async move {
                     recheck_broken_endpoint(
-                        ip_address,
-                        backoff,
+                        address,
                         &self.template,
                         &self.ready_clients,
                         &self.broken_endpoints,
