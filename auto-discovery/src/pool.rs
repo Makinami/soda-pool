@@ -8,7 +8,6 @@ use tokio::{
     time::interval,
 };
 use tonic::transport::Channel;
-
 use tracing::{debug, trace};
 
 use crate::{
@@ -19,17 +18,17 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct WrappedClientBuilder {
+pub struct ChannelPoolBuilder {
     endpoint: EndpointTemplate,
     dns_interval: Duration,
 }
 
 #[derive(Debug)]
-pub enum WrapperClientBuilderError {
+pub enum ChannelPoolBuilderError {
     FailedToInitiate,
 }
 
-impl WrappedClientBuilder {
+impl ChannelPoolBuilder {
     pub fn new(endpoint: EndpointTemplate) -> Self {
         Self {
             endpoint,
@@ -45,7 +44,7 @@ impl WrappedClientBuilder {
     }
 
     // todo-interface: Consider error type that will be returned when DNS lookup fails or times out.
-    pub async fn build(self) -> Result<WrappedClient, WrapperClientBuilderError> {
+    pub async fn build(self) -> Result<ChannelPool, ChannelPoolBuilderError> {
         let ready_clients = Arc::new(ReadyChannels::default());
         let broken_endpoints = Arc::new(BrokenEndpoints::default());
 
@@ -95,11 +94,11 @@ impl WrappedClientBuilder {
         match initiated_recv.await {
             Ok(()) => {}
             Err(_) => {
-                return Err(WrapperClientBuilderError::FailedToInitiate);
+                return Err(ChannelPoolBuilderError::FailedToInitiate);
             }
         }
 
-        Ok(WrappedClient {
+        Ok(ChannelPool {
             template: Arc::new(self.endpoint),
             ready_clients,
             broken_endpoints,
@@ -187,7 +186,7 @@ impl Drop for AbortOnDrop {
 
 // todo-performance: Need to change to INNER pattern to avoid cloning multiple Arcs.
 #[derive(Clone, Debug)]
-pub struct WrappedClient {
+pub struct ChannelPool {
     template: Arc<EndpointTemplate>,
     ready_clients: Arc<ReadyChannels>,
     broken_endpoints: Arc<BrokenEndpoints>,
@@ -196,7 +195,7 @@ pub struct WrappedClient {
     _doctor_task: Arc<AbortOnDrop>,
 }
 
-impl WrappedClient {
+impl ChannelPool {
     pub async fn get_channel(&self) -> Option<(IpAddr, Channel)> {
         static RECHECK_BROKEN_ENDPOINTS: RwLock<DateTime<Utc>> =
             RwLock::const_new(DateTime::<Utc>::MIN_UTC);

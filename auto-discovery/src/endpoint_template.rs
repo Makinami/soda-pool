@@ -448,10 +448,7 @@ mod tests {
 
         let http2_adaptive_window = true;
         let builder = builder.http2_adaptive_window(http2_adaptive_window);
-        assert_eq!(
-            builder.http2_adaptive_window,
-            Some(http2_adaptive_window)
-        );
+        assert_eq!(builder.http2_adaptive_window, Some(http2_adaptive_window));
 
         let _ = builder.build([127, 0, 0, 1]);
     }

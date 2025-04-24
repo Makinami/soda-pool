@@ -42,7 +42,6 @@ impl RetryPolicy for DefaultRetryPolicy {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -52,7 +51,10 @@ mod tests {
     fn test_default_retry_policy_alive() {
         let err = Status::new(tonic::Code::Unknown, "test error");
         let result = DefaultRetryPolicy::should_retry(&err, 1);
-        assert_eq!(result, RetryCheckResult(ServerStatus::Alive, RetryTime::DoNotRetry));
+        assert_eq!(
+            result,
+            RetryCheckResult(ServerStatus::Alive, RetryTime::DoNotRetry)
+        );
     }
 
     #[test]
@@ -68,6 +70,9 @@ mod tests {
 
         let err = Status::from_error(Box::new(TestError));
         let result = DefaultRetryPolicy::should_retry(&err, 1);
-        assert_eq!(result, RetryCheckResult(ServerStatus::Dead, RetryTime::Immediately));
+        assert_eq!(
+            result,
+            RetryCheckResult(ServerStatus::Dead, RetryTime::Immediately)
+        );
     }
 }

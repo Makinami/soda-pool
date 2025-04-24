@@ -3,28 +3,20 @@ macro_rules! define_client {
     ($client_type:ident) => {
         #[derive(Clone)]
         pub struct $client_type {
-            base: $crate::WrappedClient,
+            pool: $crate::ChannelPool,
         }
 
         impl $client_type {
-            pub async fn new(endpoint: $crate::EndpointTemplate) -> Result<Self, $crate::WrapperClientBuilderError> {
+            pub async fn new(endpoint: $crate::EndpointTemplate) -> Result<Self, $crate::ChannelPoolBuilderError> {
                 Ok(Self {
-                    base: $crate::WrappedClientBuilder::new(endpoint).build().await?,
+                    pool: $crate::ChannelPoolBuilder::new(endpoint).build().await?,
                 })
-            }
-
-            async fn get_channel(&self) -> Option<(std::net::IpAddr, tonic::transport::Channel)> {
-                self.base.get_channel().await
-            }
-
-            async fn report_broken(&self, ip_address: std::net::IpAddr) {
-                self.base.report_broken(ip_address).await
             }
         }
 
-        impl From<$crate::WrappedClient> for $client_type {
-            fn from(base: $crate::WrappedClient) -> Self {
-                Self { base }
+        impl From<$crate::ChannelPool> for $client_type {
+            fn from(pool: $crate::ChannelPool) -> Self {
+                Self { pool }
             }
         }
     };
@@ -70,7 +62,7 @@ macro_rules! define_method {
                     tries += 1;
 
                     // Get channel of random index.
-                    let (ip_address, channel) = self.get_channel().await.ok_or_else(|| {
+                    let (ip_address, channel) = self.pool.get_channel().await.ok_or_else(|| {
                         tonic::Status::unavailable("No ready channels")
                     })?;
 
@@ -89,7 +81,7 @@ macro_rules! define_method {
                             let $crate::RetryCheckResult(server_status, retry_time) = RP::should_retry(&e, tries);
                             if matches!(server_status, $crate::ServerStatus::Dead) {
                                 // If the server is dead, we should report it.
-                                self.report_broken(ip_address).await;
+                                self.pool.report_broken(ip_address).await;
                             }
 
                             match retry_time {

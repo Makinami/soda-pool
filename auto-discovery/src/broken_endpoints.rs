@@ -72,11 +72,7 @@ impl BrokenEndpoints {
             .await;
     }
 
-    async fn add_address_with_current_fail_count(
-        &self,
-        address: IpAddr,
-        current_fail_count: u8,
-    ) {
+    async fn add_address_with_current_fail_count(&self, address: IpAddr, current_fail_count: u8) {
         let next_test_time = BackoffTracker::from_failed_times(current_fail_count);
         let mut guard = self.addresses.lock().await;
         guard.retain(|DelayedAddress(_, addr)| *addr != address);
@@ -243,15 +239,25 @@ mod tests {
     }
 
     mod broken_endpoints {
-        use std::{net::{Ipv4Addr, Ipv6Addr}, vec};
+        use std::{
+            net::{Ipv4Addr, Ipv6Addr},
+            sync::Arc,
+            vec,
+        };
+
+        use tokio::{task::yield_now, time::Instant};
 
         use super::*;
 
         #[tokio::test]
         async fn get_address() {
             let broken_endpoints = BrokenEndpoints::default();
-            broken_endpoints.add_address(Ipv4Addr::LOCALHOST.into()).await;
-            broken_endpoints.add_address(Ipv6Addr::LOCALHOST.into()).await;
+            broken_endpoints
+                .add_address(Ipv4Addr::LOCALHOST.into())
+                .await;
+            broken_endpoints
+                .add_address(Ipv6Addr::LOCALHOST.into())
+                .await;
 
             let actual = broken_endpoints
                 .get_address(Ipv4Addr::LOCALHOST.into())
@@ -264,7 +270,8 @@ mod tests {
             assert!(
                 broken_endpoints
                     .get_address([127, 0, 0, 2].into())
-                    .await.is_none()
+                    .await
+                    .is_none()
             );
         }
 
@@ -301,9 +308,11 @@ mod tests {
             let guard = broken_endpoints.addresses().await;
             let addresses = guard.iter().collect::<Vec<_>>();
 
-            assert!(addresses.iter().all(|address| {
-                address.failed_times() == 1
-            }));
+            assert!(
+                addresses
+                    .iter()
+                    .all(|address| { address.failed_times() == 1 })
+            );
 
             let mut actual = addresses.into_iter().map(Deref::deref).collect::<Vec<_>>();
             actual.sort();
@@ -319,12 +328,38 @@ mod tests {
             broken_endpoints.add_address(address1).await;
             broken_endpoints.add_address(address2).await;
 
-            let new_addresses = BinaryHeap::from(vec![DelayedAddress::from(IpAddr::from(Ipv4Addr::LOCALHOST))]);
+            let new_addresses = BinaryHeap::from(vec![DelayedAddress::from(IpAddr::from(
+                Ipv4Addr::LOCALHOST,
+            ))]);
             broken_endpoints.replace_with(new_addresses).await;
 
             let guard = broken_endpoints.addresses().await;
             assert_eq!(guard.len(), 1);
             assert_eq!(guard.peek().unwrap().failed_times(), 1);
+        }
+
+        #[tokio::test]
+        // Note: Can we properly test it without using a real clock and waiting for seconds?
+        async fn next_broken_ip_address() {
+            let broken_endpoints = Arc::new(BrokenEndpoints::default());
+            let address1 = Ipv4Addr::from([10, 0, 0, 1]).into();
+
+            let background = {
+                let broken_endpoints = broken_endpoints.clone();
+                tokio::spawn(async move {
+                    let start = Instant::now();
+                    let next_broken_ip = broken_endpoints.next_broken_ip_address().await;
+                    let duration = start.elapsed();
+                    assert_eq!(next_broken_ip.failed_times(), 1);
+                    assert!(duration >= Duration::from_secs(1));
+                })
+            };
+            yield_now().await;
+            broken_endpoints.add_address(address1).await;
+
+            println!("Waiting for background task to finish");
+
+            background.await.unwrap();
         }
     }
 }
