@@ -2113,6 +2113,20 @@ version = "0.1.0"
 dependencies = [
  "prost-build",
  "tonic-build",
+ "tonic-pool-build",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "tonic-pool-build"
+version = "0.1.0"
+dependencies = [
+ "paste",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "syn",
+ "tracing",
 ]
 
 [[package]]

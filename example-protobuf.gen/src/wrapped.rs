@@ -1,6 +1,6 @@
 use auto_discovery::{define_client, define_method};
 
-use crate::health_client::HealthClient;
+use super::health::health_client::HealthClient;
 
 define_client!(
     WrappedClient,

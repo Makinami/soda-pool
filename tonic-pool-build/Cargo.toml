@@ -1,0 +1,12 @@
+[package]
+name = "tonic-pool-build"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+syn = { version = "2.0.100", features = ["full", "extra-traits"] }
+tracing = { workspace = true }
+proc-macro2 = "1.0"
+quote = "1.0"
+prettyplease = "0.2"
+paste = { workspace = true }
