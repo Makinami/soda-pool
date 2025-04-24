@@ -34,10 +34,11 @@ pub mod mock_net {
             (*DNS_RESULT
                 .read()
                 .expect("failed to acquire read lock on DNS_RESULT"))(self.0, self.1)
-            .map(|v| v.into_iter())
+            .map(IntoIterator::into_iter)
         }
     }
 
+    #[allow(dead_code)]
     pub fn set_socket_addrs(func: Box<ToSocketAddrsFn>) {
         *DNS_RESULT
             .write()
@@ -86,10 +87,7 @@ mod tests {
 
         let result = resolve_domain("localhost");
         assert!(result.is_err());
-        let error = match result {
-            Err(e) => e,
-            Ok(_) => unreachable!(),
-        };
+        let Err(error) = result else { unreachable!() };
         assert_eq!(error.kind(), io::ErrorKind::Other);
         assert_eq!(error.to_string(), "mock error");
     }

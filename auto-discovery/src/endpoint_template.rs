@@ -372,7 +372,7 @@ mod tests {
     fn from_trait(#[case] url: &str, #[case] expected: Result<&str, Error>) {
         let url = Url::parse(url).unwrap();
         let result = EndpointTemplate::try_from(url.clone());
-        let domain = result.as_ref().map(|builder| builder.domain());
+        let domain = result.as_ref().map(EndpointTemplate::domain);
         assert_eq!(domain, expected.as_deref());
     }
 
