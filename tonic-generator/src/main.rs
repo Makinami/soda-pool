@@ -19,6 +19,6 @@ fn main() {
 
     tonic_pool_build::configure()
         .dir("./example-protobuf.gen/src")
-        .wrap_services(&["health"])
+        .build_pools(&["health"])
         .expect("failed to wrap services");
 }

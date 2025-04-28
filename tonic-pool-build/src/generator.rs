@@ -1,0 +1,143 @@
+use proc_macro2::TokenStream;
+use quote::quote;
+use syn::Ident;
+
+use crate::model::{GrpcClientFile, GrpcClientImpl, GrpcClientMethod, GrpcClientModule};
+
+impl GrpcClientFile {
+    pub(crate) fn generate_pooled_version(&self) -> TokenStream {
+        let original_file_module = &self.file_module;
+        let client_modules = self.client_modules.iter()
+            .map(|client_module| client_module.generate_pooled_version(&self.file_module));
+
+        quote! {
+            use super::#original_file_module::*;
+
+            #(#client_modules)*
+        }
+    }
+}
+
+impl GrpcClientModule {
+    pub(crate) fn generate_pooled_version(&self, original_file_module: &Ident) -> TokenStream {
+        let module_name = &self.name;
+        let clients = self.clients.iter()
+            .map(|client| client.generate_pooled_version());
+
+        quote! {
+            pub mod #module_name {
+                use super::super::#original_file_module::#module_name::*;
+
+                #(#clients)*
+            }
+        }
+    }
+}
+
+impl GrpcClientImpl {
+    pub(crate) fn generate_pooled_version(&self) -> TokenStream {
+        let client_pool_ident = Ident::new(&format!("{}Pool", self.name), self.name.span());
+        let methods = self.methods.iter()
+            .map(|method| method.generate_pooled_version(&self.name));
+
+        quote! {
+            #[derive(Clone)]
+            pub struct #client_pool_ident {
+                pool: ::auto_discovery::ChannelPool,
+            }
+
+            impl #client_pool_ident {
+                pub async fn new(pool: ::auto_discovery::ChannelPool) -> Self {
+                    Self { pool }
+                }
+
+                pub async fn new_from_endpoint(endpoint: ::auto_discovery::EndpointTemplate) -> std::result::Result<Self, ::auto_discovery::ChannelPoolBuilderError> {
+                    Ok(Self {
+                        pool: ::auto_discovery::ChannelPoolBuilder::new(endpoint)
+                            .build()
+                            .await?,
+                    })
+                }
+            }
+
+            impl From<::auto_discovery::ChannelPool> for #client_pool_ident {
+                fn from(pool: ::auto_discovery::ChannelPool) -> Self {
+                    Self { pool }
+                }
+            }
+
+            impl #client_pool_ident {
+                #(#methods)*
+            }
+        }
+    }
+}
+
+impl GrpcClientMethod {
+    pub(crate) fn generate_pooled_version(&self, original_client_name: &Ident) -> TokenStream {
+        let method_name = &self.name;
+        let method_name_with_retry = Ident::new(&format!("{}_with_retry", method_name), method_name.span());
+        let request_param = &self.request_type;
+        let response_type = &self.response_type;
+
+        quote! {
+            pub async fn #method_name(
+                &self,
+                #request_param // Will be MUCH better to extract actual inner type rather than using the whole parameter. Same for response.
+            ) -> #response_type {
+                self.#method_name_with_retry::<::auto_discovery::DefaultRetryPolicy>(request).await
+            }
+
+            pub async fn #method_name_with_retry<RP: ::auto_discovery::RetryPolicy>(
+                &self,
+                #request_param
+            ) -> #response_type {
+                let (metadata, extensions, message) = request.into_request().into_parts();
+                let mut tries = 0;
+                loop {
+                    tries += 1;
+
+                    let (ip_address, channel) = self.pool.get_channel().await.ok_or_else(|| {
+                        tonic::Status::unavailable("No ready channels")
+                    })?;
+
+                    let request = tonic::Request::from_parts(
+                        metadata.clone(),
+                        extensions.clone(),
+                        message.clone(),
+                    );
+                    let result = #original_client_name::new(channel).#method_name(request).await;
+
+                    match result {
+                        Ok(response) => {
+                            return Ok(response);
+                        }
+                        Err(e) => {
+                            let ::auto_discovery::RetryCheckResult(server_status, retry_time) = RP::should_retry(&e, tries);
+                            if matches!(server_status, ::auto_discovery::ServerStatus::Dead) {
+                                // If the server is dead, we should report it.
+                                self.pool.report_broken(ip_address).await;
+                            }
+
+                            match retry_time {
+                                ::auto_discovery::RetryTime::DoNotRetry => {
+                                    // Do not retry and do not report broken endpoint.
+                                    return Err(e);
+                                }
+                                ::auto_discovery::RetryTime::Immediately => {
+                                    // Retry immediately.
+                                    continue;
+                                }
+                                ::auto_discovery::RetryTime::After(duration) => {
+                                    // Wait for the specified duration before retrying.
+                                    // todo-interface: Don't require client to have tokio dependency.
+                                    ::auto_discovery::deps::sleep(duration).await;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

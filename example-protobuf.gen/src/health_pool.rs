@@ -6,13 +6,15 @@ pub mod health_client {
         pool: ::auto_discovery::ChannelPool,
     }
     impl HealthClientPool {
-        pub async fn new(endpoint: ::auto_discovery::EndpointTemplate) -> Self {
-            Self {
-                pool: ::auto_discovery::ChannelPoolBuilder::new(endpoint)
-                    .build()
-                    .await
-                    .unwrap(),
-            }
+        pub async fn new(pool: ::auto_discovery::ChannelPool) -> Self {
+            Self { pool }
+        }
+        pub async fn new_from_endpoint(
+            endpoint: ::auto_discovery::EndpointTemplate,
+        ) -> std::result::Result<Self, ::auto_discovery::ChannelPoolBuilderError> {
+            Ok(Self {
+                pool: ::auto_discovery::ChannelPoolBuilder::new(endpoint).build().await?,
+            })
         }
     }
     impl From<::auto_discovery::ChannelPool> for HealthClientPool {
@@ -91,13 +93,15 @@ pub mod echo_client {
         pool: ::auto_discovery::ChannelPool,
     }
     impl EchoClientPool {
-        pub async fn new(endpoint: ::auto_discovery::EndpointTemplate) -> Self {
-            Self {
-                pool: ::auto_discovery::ChannelPoolBuilder::new(endpoint)
-                    .build()
-                    .await
-                    .unwrap(),
-            }
+        pub async fn new(pool: ::auto_discovery::ChannelPool) -> Self {
+            Self { pool }
+        }
+        pub async fn new_from_endpoint(
+            endpoint: ::auto_discovery::EndpointTemplate,
+        ) -> std::result::Result<Self, ::auto_discovery::ChannelPoolBuilderError> {
+            Ok(Self {
+                pool: ::auto_discovery::ChannelPoolBuilder::new(endpoint).build().await?,
+            })
         }
     }
     impl From<::auto_discovery::ChannelPool> for EchoClientPool {

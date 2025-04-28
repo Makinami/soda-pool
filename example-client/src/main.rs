@@ -26,7 +26,7 @@ async fn main() {
         .init();
 
     let template = EndpointTemplate::new(Url::parse("http://localhost:50001").unwrap()).unwrap();
-    let client = HealthClientPool::new(template).await;
+    let client = HealthClientPool::new_from_endpoint(template).await.unwrap();
 
     for _ in 0..4 {
         let client = client.clone();
