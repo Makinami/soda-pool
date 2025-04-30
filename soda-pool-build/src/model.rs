@@ -6,19 +6,19 @@ pub(crate) struct GrpcClientFile {
     pub(crate) client_modules: Vec<GrpcClientModule>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct GrpcClientModule {
     pub(crate) name: Ident,
     pub(crate) clients: Vec<GrpcClientImpl>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct GrpcClientImpl {
     pub(crate) name: Ident,
     pub(crate) methods: Vec<GrpcClientMethod>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct GrpcClientMethod {
     pub(crate) name: Ident,
     pub(crate) request_type: Type,

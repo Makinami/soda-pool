@@ -263,4 +263,52 @@ fn get_into_request_type(
 
     Err(BuilderError::UnexpectedStructure)
 }
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use syn::File;
+
+    use super::*;
+
+    #[test]
+    fn ok() {
+        let syntax: File = syn::parse_str(include_str!("test_cases/success.rs")).unwrap();
+        let actual = find_client_modules(&syntax)
+            .map(parse_grpc_client_module)
+            .collect::<BuilderResult<Vec<_>>>().unwrap();
+        let expected = vec![
+            GrpcClientModule {
+                name: Ident::new("health_client", Span::call_site()),
+                clients: vec![
+                    GrpcClientImpl {
+                        name: Ident::new("HealthClient", Span::call_site()),
+                        methods: vec![
+                            GrpcClientMethod {
+                                name: Ident::new("is_alive", Span::call_site()),
+                                request_type: syn::parse_str("()").unwrap(),
+                                response_type: syn::parse_str("super::IsAliveResponse").unwrap(),
+                            },
+                        ],
+                    }
+                ]
+            },
+            GrpcClientModule {
+                name: Ident::new("echo_client", Span::call_site()),
+                clients: vec![
+                    GrpcClientImpl {
+                        name: Ident::new("EchoClient", Span::call_site()),
+                        methods: vec![
+                            GrpcClientMethod {
+                                name: Ident::new("echo_message", Span::call_site()),
+                                request_type: syn::parse_str("super::EchoRequest").unwrap(),
+                                response_type: syn::parse_str("super::EchoResponse").unwrap(),
+                            },
+                        ],
+                    }
+                ]
+            }
+        ];
+        assert_eq!(actual, expected);
+    }
 }
