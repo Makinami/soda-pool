@@ -1,19 +1,25 @@
+use core::fmt;
 use http::HeaderValue;
+use std::fmt::Debug;
 use std::{net::IpAddr, str::FromStr, time::Duration};
 #[cfg(feature = "_tls-any")]
 use tonic::transport::ClientTlsConfig;
 use tonic::transport::{Endpoint, Uri};
 use url::Host;
-pub use url::Url;
+use url::Url;
 
-#[derive(Debug, Clone)]
+/// Template for creating [`Endpoint`]s.
+///
+/// This structure is used to store all the information necessary to create an [`Endpoint`].
+/// It then creates an [`Endpoint`] to a specific IP address using the [`build`](EndpointTemplate::build) method.
+#[derive(Clone)]
 pub struct EndpointTemplate {
     url: Url,
     origin: Option<Uri>,
     user_agent: Option<HeaderValue>,
+    timeout: Option<Duration>,
     concurrency_limit: Option<usize>,
     rate_limit: Option<(u64, Duration)>,
-    timeout: Option<Duration>,
     #[cfg(feature = "_tls-any")]
     tls_config: Option<ClientTlsConfig>,
     buffer_size: Option<usize>,
@@ -24,21 +30,30 @@ pub struct EndpointTemplate {
     http2_keep_alive_interval: Option<Duration>,
     http2_keep_alive_timeout: Option<Duration>,
     http2_keep_alive_while_idle: Option<bool>,
+    http2_max_header_list_size: Option<u32>,
     connect_timeout: Option<Duration>,
     http2_adaptive_window: Option<bool>,
+    local_address: Option<IpAddr>,
+    // todo: If at all possible, support also setting the executor.
 }
 
 impl EndpointTemplate {
-    pub fn new(url: impl Into<Url>) -> Result<Self, Error> {
+    /// Creates a new [`EndpointTemplate`] from the provided URL.
+    /// 
+    /// # Errors
+    /// - Will return [`EndpointTemplateError::HostMissing`] if the provided URL does not contain a host.
+    /// - Will return [`EndpointTemplateError::AlreadyIpAddress`] if the provided URL already contains an IP address.
+    /// - Will return [`EndpointTemplateError::Inconvertible`] if the provided URL cannot be converted to the tonic's internal representation.
+    pub fn new(url: impl Into<Url>) -> Result<Self, EndpointTemplateError> {
         let url: Url = url.into();
 
         // Check if URL contains hostname that can be resolved with DNS
         match url.host() {
             Some(host) => match host {
                 Host::Domain(_) => {}
-                _ => return Err(Error::AlreadyIpAddress),
+                _ => return Err(EndpointTemplateError::AlreadyIpAddress),
             },
-            None => return Err(Error::HostMissing),
+            None => return Err(EndpointTemplateError::HostMissing),
         }
 
         // Check if hostname in URL can be substituted by IP address
@@ -46,7 +61,7 @@ impl EndpointTemplate {
             // Since we have a host, I can't imagine an address that still
             // couldn't be a base. If there is one, let's treat it as
             // Inconvertible error for simplicity.
-            return Err(Error::Inconvertible);
+            return Err(EndpointTemplateError::Inconvertible);
         }
 
         // Check if tonic Uri can be build from Url.
@@ -54,7 +69,7 @@ impl EndpointTemplate {
             // It's hard to prove that any url::Url will also be parsable as
             // tonic::transport::Uri, but in practice this error should never
             // happen.
-            return Err(Error::Inconvertible);
+            return Err(EndpointTemplateError::Inconvertible);
         }
 
         Ok(Self {
@@ -74,147 +89,19 @@ impl EndpointTemplate {
             http2_keep_alive_interval: None,
             http2_keep_alive_timeout: None,
             http2_keep_alive_while_idle: None,
+            http2_max_header_list_size: None,
             connect_timeout: None,
             http2_adaptive_window: None,
+            local_address: None,
         })
     }
 
-    #[must_use]
-    pub fn origin(self, origin: Uri) -> Self {
-        Self {
-            origin: Some(origin),
-            ..self
-        }
-    }
-
-    pub fn user_agent(self, user_agent: impl TryInto<HeaderValue>) -> Result<Self, Error> {
-        user_agent
-            .try_into()
-            .map(|ua| Self {
-                user_agent: Some(ua),
-                ..self
-            })
-            .map_err(|_| Error::InvalidUserAgent)
-    }
-
-    #[must_use]
-    pub fn timeout(self, dur: Duration) -> Self {
-        Self {
-            timeout: Some(dur),
-            ..self
-        }
-    }
-
-    #[cfg(feature = "_tls-any")]
-    pub fn tls_config(self, tls_config: ClientTlsConfig) -> Result<Self, Error> {
-        // Make sure we'll be able to build the Endpoint using this ClientTlsConfig
-        let endpoint = self.build(std::net::Ipv4Addr::new(127, 0, 0, 1));
-        let _ = endpoint
-            .tls_config(tls_config.clone())
-            .map_err(|_| Error::TlsInvalidUrl)?;
-
-        Ok(Self {
-            tls_config: Some(tls_config),
-            ..self
-        })
-    }
-
-    #[must_use]
-    pub fn connect_timeout(self, dur: Duration) -> Self {
-        Self {
-            connect_timeout: Some(dur),
-            ..self
-        }
-    }
-
-    #[must_use]
-    pub fn tcp_keepalive(self, tcp_keepalive: Option<Duration>) -> Self {
-        Self {
-            tcp_keepalive,
-            ..self
-        }
-    }
-
-    #[must_use]
-    pub fn concurrency_limit(self, limit: usize) -> Self {
-        Self {
-            concurrency_limit: Some(limit),
-            ..self
-        }
-    }
-
-    #[must_use]
-    pub fn rate_limit(self, limit: u64, duration: Duration) -> Self {
-        Self {
-            rate_limit: Some((limit, duration)),
-            ..self
-        }
-    }
-
-    #[must_use]
-    pub fn initial_stream_window_size(self, sz: impl Into<Option<u32>>) -> Self {
-        Self {
-            init_stream_window_size: sz.into(),
-            ..self
-        }
-    }
-
-    #[must_use]
-    pub fn initial_connection_window_size(self, sz: impl Into<Option<u32>>) -> Self {
-        Self {
-            init_connection_window_size: sz.into(),
-            ..self
-        }
-    }
-
-    #[must_use]
-    pub fn buffer_size(self, sz: impl Into<Option<usize>>) -> Self {
-        Self {
-            buffer_size: sz.into(),
-            ..self
-        }
-    }
-
-    #[must_use]
-    pub fn tcp_nodelay(self, enabled: bool) -> Self {
-        Self {
-            tcp_nodelay: Some(enabled),
-            ..self
-        }
-    }
-
-    #[must_use]
-    pub fn http2_keep_alive_interval(self, interval: Duration) -> Self {
-        Self {
-            http2_keep_alive_interval: Some(interval),
-            ..self
-        }
-    }
-
-    #[must_use]
-    pub fn keep_alive_timeout(self, duration: Duration) -> Self {
-        Self {
-            http2_keep_alive_timeout: Some(duration),
-            ..self
-        }
-    }
-
-    #[must_use]
-    pub fn keep_alive_while_idle(self, enabled: bool) -> Self {
-        Self {
-            http2_keep_alive_while_idle: Some(enabled),
-            ..self
-        }
-    }
-
-    #[must_use]
-    pub fn http2_adaptive_window(self, enabled: bool) -> Self {
-        Self {
-            http2_adaptive_window: Some(enabled),
-            ..self
-        }
-    }
-
+    /// Builds an [`Endpoint`] to the IP address.
+    ///
+    /// This will substitute the hostname in the URL with the provided IP
+    /// address, create a new [`Endpoint`] from it, and apply all the settings
+    /// set in the builder.
+    #[allow(clippy::missing_panics_doc)]
     pub fn build(&self, ip_address: impl Into<IpAddr>) -> Endpoint {
         let mut endpoint = Endpoint::from(self.build_uri(ip_address.into()));
 
@@ -283,9 +170,17 @@ impl EndpointTemplate {
             endpoint = endpoint.http2_adaptive_window(enabled);
         }
 
+        if let Some(size) = self.http2_max_header_list_size {
+            endpoint = endpoint.http2_max_header_list_size(size);
+        }
+
+        endpoint = endpoint.local_address(self.local_address);
+
         endpoint
     }
 
+    /// Returns the hostname of the URL held in the template.
+    #[allow(clippy::missing_panics_doc)]
     pub fn domain(&self) -> &str {
         self.url
             .domain()
@@ -300,20 +195,233 @@ impl EndpointTemplate {
             .expect("already checked in the constructor by trying cannot_be_a_base");
         Uri::from_str(url.as_str()).expect("starting from Url, this should always be a valid Uri")
     }
+
+    /// r.f. [`Endpoint::user_agent`].
+    ///
+    /// # Errors
+    ///
+    /// Will return [`EndpointTemplateError::InvalidUserAgent`] if the provided value cannot be converted to a [`HeaderValue`] and would cause a failure when building an endpoint.
+    pub fn user_agent(
+        self,
+        user_agent: impl TryInto<HeaderValue>,
+    ) -> Result<Self, EndpointTemplateError> {
+        user_agent
+            .try_into()
+            .map(|ua| Self {
+                user_agent: Some(ua),
+                ..self
+            })
+            .map_err(|_| EndpointTemplateError::InvalidUserAgent)
+    }
+
+    /// r.f. [`Endpoint::origin`].
+    #[must_use]
+    pub fn origin(self, origin: Uri) -> Self {
+        Self {
+            origin: Some(origin),
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::timeout`].
+    #[must_use]
+    pub fn timeout(self, dur: Duration) -> Self {
+        Self {
+            timeout: Some(dur),
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::connect_timeout`].
+    #[must_use]
+    pub fn connect_timeout(self, dur: Duration) -> Self {
+        Self {
+            connect_timeout: Some(dur),
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::tcp_keepalive`].
+    #[must_use]
+    pub fn tcp_keepalive(self, tcp_keepalive: Option<Duration>) -> Self {
+        Self {
+            tcp_keepalive,
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::concurrency_limit`]
+    #[must_use]
+    pub fn concurrency_limit(self, limit: usize) -> Self {
+        Self {
+            concurrency_limit: Some(limit),
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::rate_limit`].
+    #[must_use]
+    pub fn rate_limit(self, limit: u64, duration: Duration) -> Self {
+        Self {
+            rate_limit: Some((limit, duration)),
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::initial_stream_window_size`].
+    #[must_use]
+    pub fn initial_stream_window_size(self, sz: impl Into<Option<u32>>) -> Self {
+        Self {
+            init_stream_window_size: sz.into(),
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::initial_connection_window_size`].
+    #[must_use]
+    pub fn initial_connection_window_size(self, sz: impl Into<Option<u32>>) -> Self {
+        Self {
+            init_connection_window_size: sz.into(),
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::buffer_size`].
+    #[must_use]
+    pub fn buffer_size(self, sz: impl Into<Option<usize>>) -> Self {
+        Self {
+            buffer_size: sz.into(),
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::tls_config`].
+    ///
+    /// # Errors
+    ///
+    /// Will return [`EndpointTemplateError::InvalidTlsConfig`] if the provided config cannot be passed to an [`Endpoint`] and would cause a failure when building an endpoint.
+    #[cfg(feature = "_tls-any")]
+    pub fn tls_config(self, tls_config: ClientTlsConfig) -> Result<Self, EndpointTemplateError> {
+        // Make sure we'll be able to build the Endpoint using this ClientTlsConfig
+        let endpoint = self.build(std::net::Ipv4Addr::new(127, 0, 0, 1));
+        let _ = endpoint
+            .tls_config(tls_config.clone())
+            .map_err(|_| EndpointTemplateError::InvalidTlsConfig)?;
+
+        Ok(Self {
+            tls_config: Some(tls_config),
+            ..self
+        })
+    }
+
+    /// r.f. [`Endpoint::tcp_nodelay`].
+    #[must_use]
+    pub fn tcp_nodelay(self, enabled: bool) -> Self {
+        Self {
+            tcp_nodelay: Some(enabled),
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::http2_keep_alive_interval`].
+    #[must_use]
+    pub fn http2_keep_alive_interval(self, interval: Duration) -> Self {
+        Self {
+            http2_keep_alive_interval: Some(interval),
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::keep_alive_timeout`].
+    #[must_use]
+    pub fn keep_alive_timeout(self, duration: Duration) -> Self {
+        Self {
+            http2_keep_alive_timeout: Some(duration),
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::keep_alive_while_idle`].
+    #[must_use]
+    pub fn keep_alive_while_idle(self, enabled: bool) -> Self {
+        Self {
+            http2_keep_alive_while_idle: Some(enabled),
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::http2_adaptive_window`].
+    #[must_use]
+    pub fn http2_adaptive_window(self, enabled: bool) -> Self {
+        Self {
+            http2_adaptive_window: Some(enabled),
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::http2_max_header_list_size`].
+    #[must_use]
+    pub fn http2_max_header_list_size(self, size: u32) -> Self {
+        Self {
+            http2_max_header_list_size: Some(size),
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::local_address`].
+    #[must_use]
+    pub fn local_address(self, ip: Option<IpAddr>) -> Self {
+        Self {
+            local_address: ip,
+            ..self
+        }
+    }
 }
 
+impl Debug for EndpointTemplate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EndpointTemplate")
+            .field("url", &self.url.as_str())
+            .finish_non_exhaustive()
+    }
+}
+
+/// Errors that can occur when creating an [`EndpointTemplate`].
 #[derive(Debug, PartialEq)]
-pub enum Error {
+pub enum EndpointTemplateError {
+    /// The URL does not contain a host.
+    ///
+    /// Provided URL does not contain a host that can be resolved with DNS.
     HostMissing,
+
+    /// The URL is already an IP address.
+    ///
+    /// Provided URL is already an IP address, so it cannot be used as a template.
     AlreadyIpAddress,
+
+    /// The URL cannot be converted to an internal type.
+    ///
+    /// tonic's [`Endpoint`](tonic::transport::Endpoint) uses its own
+    /// [type](tonic::transport::Uri) for representing an address and provided
+    /// URL (after substituting hostname for an IP address) could not be
+    /// converted into it.
     Inconvertible,
+
+    /// The provided user agent is invalid.
+    ///
+    /// Provided user agent cannot be converted to a [`HeaderValue`] and would
+    /// cause a failure when building an endpoint.
     InvalidUserAgent,
+
+    /// The provided TLS config is invalid.
+    ///
+    /// Provided TLS config would cause a failure when building an endpoint.
     #[cfg(feature = "_tls-any")]
-    TlsInvalidUrl,
+    InvalidTlsConfig,
 }
 
 impl TryFrom<Url> for EndpointTemplate {
-    type Error = Error;
+    type Error = EndpointTemplateError;
 
     fn try_from(url: Url) -> Result<Self, Self::Error> {
         Self::new(url)
@@ -355,10 +463,10 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[case("http://127.0.0.1:50051", Error::AlreadyIpAddress)]
-    #[case("http://[::1]:50051", Error::AlreadyIpAddress)]
-    #[case("mailto:admin@example.com", Error::HostMissing)]
-    fn builder_error(#[case] input: &str, #[case] expected: Error) {
+    #[case("http://127.0.0.1:50051", EndpointTemplateError::AlreadyIpAddress)]
+    #[case("http://[::1]:50051", EndpointTemplateError::AlreadyIpAddress)]
+    #[case("mailto:admin@example.com", EndpointTemplateError::HostMissing)]
+    fn builder_error(#[case] input: &str, #[case] expected: EndpointTemplateError) {
         let result = EndpointTemplate::new(Url::parse(input).unwrap());
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), expected);
@@ -366,10 +474,10 @@ mod tests {
 
     #[rstest::rstest]
     #[case("http://example.com:50051/foo", Ok("example.com"))]
-    #[case("http://127.0.0.1:50051", Err(Error::AlreadyIpAddress))]
-    #[case("http://[::1]:50051", Err(Error::AlreadyIpAddress))]
-    #[case("mailto:admin@example.com", Err(Error::HostMissing))]
-    fn from_trait(#[case] url: &str, #[case] expected: Result<&str, Error>) {
+    #[case("http://127.0.0.1:50051", Err(EndpointTemplateError::AlreadyIpAddress))]
+    #[case("http://[::1]:50051", Err(EndpointTemplateError::AlreadyIpAddress))]
+    #[case("mailto:admin@example.com", Err(EndpointTemplateError::HostMissing))]
+    fn from_trait(#[case] url: &str, #[case] expected: Result<&str, EndpointTemplateError>) {
         let url = Url::parse(url).unwrap();
         let result = EndpointTemplate::try_from(url.clone());
         let domain = result.as_ref().map(EndpointTemplate::domain);
@@ -450,6 +558,26 @@ mod tests {
         let builder = builder.http2_adaptive_window(http2_adaptive_window);
         assert_eq!(builder.http2_adaptive_window, Some(http2_adaptive_window));
 
+        let http2_max_header_list_size = 8192;
+        let builder = builder.http2_max_header_list_size(http2_max_header_list_size);
+        assert_eq!(
+            builder.http2_max_header_list_size,
+            Some(http2_max_header_list_size)
+        );
+
+        let local_address = Some(IpAddr::from([127, 0, 0, 2]));
+        let builder = builder.local_address(local_address);
+        assert_eq!(builder.local_address, local_address);
+
         let _ = builder.build([127, 0, 0, 1]);
+    }
+
+    #[test]
+    fn debug_output() {
+        let url = Url::parse("http://example.com:50051/foo").unwrap();
+        let builder = EndpointTemplate::new(url.clone()).unwrap();
+
+        let debug_output = format!("{builder:?}");
+        assert_eq!(debug_output, "EndpointTemplate { url: \"http://example.com:50051/foo\", .. }");
     }
 }
