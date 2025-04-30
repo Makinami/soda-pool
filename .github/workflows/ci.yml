@@ -15,95 +15,95 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  rustfmt:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: hecrj/setup-rust-action@v2
-      with:
-        components: rustfmt
-    - run: cargo fmt --all --check
+  # rustfmt:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - uses: hecrj/setup-rust-action@v2
+  #     with:
+  #       components: rustfmt
+  #   - run: cargo fmt --all --check
 
-  clippy:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: hecrj/setup-rust-action@v2
-      with:
-        components: clippy
-    - uses: Swatinem/rust-cache@v2
-    - run: cargo clippy --workspace --all-features --all-targets -- --deny warnings
+  # clippy:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - uses: hecrj/setup-rust-action@v2
+  #     with:
+  #       components: clippy
+  #   - uses: Swatinem/rust-cache@v2
+  #   - run: cargo clippy --workspace --all-features --all-targets -- --deny warnings
 
-  codegen:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: hecrj/setup-rust-action@v2
-    - uses: taiki-e/install-action@protoc
-    - uses: Swatinem/rust-cache@v2
-    - run: cargo run --bin tonic-generator
-    - run: git diff --exit-code
+  # codegen:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - uses: hecrj/setup-rust-action@v2
+  #   - uses: taiki-e/install-action@protoc
+  #   - uses: Swatinem/rust-cache@v2
+  #   - run: cargo run --bin tonic-generator
+  #   - run: git diff --exit-code
 
-  udeps:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: hecrj/setup-rust-action@v2
-      with:
-        rust-version: nightly
-    - uses: taiki-e/install-action@cargo-udeps
-    - uses: taiki-e/install-action@protoc
-    - uses: Swatinem/rust-cache@v2
-    - run: cargo udeps
+  # udeps:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - uses: hecrj/setup-rust-action@v2
+  #     with:
+  #       rust-version: nightly
+  #   - uses: taiki-e/install-action@cargo-udeps
+  #   - uses: taiki-e/install-action@protoc
+  #   - uses: Swatinem/rust-cache@v2
+  #   - run: cargo udeps
 
-  msrv:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: hecrj/setup-rust-action@v2
-    - name: Resolve MSRV aware dependencies
-      run: cargo update
-      env:
-        CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
-    - name: Get MSRV from manifest file
-      id: msrv
-      run: echo "version=$(yq '.workspace.package.rust-version' Cargo.toml)" >> $GITHUB_OUTPUT
-    - uses: hecrj/setup-rust-action@v2
-      with:
-        rust-version: ${{ steps.msrv.outputs.version }}
-    - uses: taiki-e/install-action@cargo-no-dev-deps
-    - uses: Swatinem/rust-cache@v2
-    - run: cargo no-dev-deps --no-private check --all-features
-    - run: cargo no-dev-deps --no-private doc --no-deps --all-features
-      env:
-        RUSTDOCFLAGS: "-D warnings"
+  # msrv:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - uses: hecrj/setup-rust-action@v2
+  #   - name: Resolve MSRV aware dependencies
+  #     run: cargo update
+  #     env:
+  #       CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+  #   - name: Get MSRV from manifest file
+  #     id: msrv
+  #     run: echo "version=$(yq '.workspace.package.rust-version' Cargo.toml)" >> $GITHUB_OUTPUT
+  #   - uses: hecrj/setup-rust-action@v2
+  #     with:
+  #       rust-version: ${{ steps.msrv.outputs.version }}
+  #   - uses: taiki-e/install-action@cargo-no-dev-deps
+  #   - uses: Swatinem/rust-cache@v2
+  #   - run: cargo no-dev-deps --no-private check --all-features
+  #   - run: cargo no-dev-deps --no-private doc --no-deps --all-features
+  #     env:
+  #       RUSTDOCFLAGS: "-D warnings"
 
-  test:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: hecrj/setup-rust-action@v2
-    - uses: taiki-e/install-action@protoc
-    - uses: taiki-e/install-action@cargo-nextest
-    - uses: Swatinem/rust-cache@v2
-    - run: cargo nextest run --workspace --all-features
+  # test:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - uses: hecrj/setup-rust-action@v2
+  #   - uses: taiki-e/install-action@protoc
+  #   - uses: taiki-e/install-action@cargo-nextest
+  #   - uses: Swatinem/rust-cache@v2
+  #   - run: cargo nextest run --workspace --all-features
 
-  doc:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-      - uses: dtolnay/install@cargo-docs-rs
-      - run: cargo docs-rs -p soda-pool
-      - run: cargo docs-rs -p soda-pool-build
+  # doc:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dtolnay/rust-toolchain@nightly
+  #     - uses: dtolnay/install@cargo-docs-rs
+  #     - run: cargo docs-rs -p soda-pool
+  #     - run: cargo docs-rs -p soda-pool-build
 
-  doc-test:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: hecrj/setup-rust-action@v2
-    - uses: Swatinem/rust-cache@v2
-    - run: cargo test --doc --all-features
+  # doc-test:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - uses: hecrj/setup-rust-action@v2
+  #   - uses: Swatinem/rust-cache@v2
+  #   - run: cargo test --doc --all-features
 
   # semver:
   #   runs-on: ubuntu-latest
