@@ -80,7 +80,7 @@ macro_rules! define_method {
                             return Ok(response);
                         }
                         Err(e) => {
-                            let $crate::RetryPolicyResult(server_status, retry_time) = RP::should_retry(&e, tries);
+                            let (server_status, retry_time) = RP::should_retry(&e, tries);
                             if matches!(server_status, $crate::ServerStatus::Dead) {
                                 // If the server is dead, we should report it.
                                 self.pool.report_broken(ip_address).await;

@@ -45,8 +45,7 @@ pub enum RetryTime {
 ///
 /// [`RetryPolicy::should_retry`] returns this type to indicate the status of
 /// the server and the time to wait before retrying the request.
-#[derive(Debug, PartialEq)]
-pub struct RetryPolicyResult(pub ServerStatus, pub RetryTime);
+pub type RetryPolicyResult = (ServerStatus, RetryTime);
 
 /// Default retry policy.
 ///
@@ -63,9 +62,9 @@ impl RetryPolicy for DefaultRetryPolicy {
         // Initial tests suggest that source of the error is set only when it comes
         // from the client library (e.g. connection refused) and not the server.
         if std::error::Error::source(err).is_some() {
-            RetryPolicyResult(ServerStatus::Dead, RetryTime::Immediately)
+            (ServerStatus::Dead, RetryTime::Immediately)
         } else {
-            RetryPolicyResult(ServerStatus::Alive, RetryTime::DoNotRetry)
+            (ServerStatus::Alive, RetryTime::DoNotRetry)
         }
     }
 }
@@ -79,10 +78,7 @@ mod tests {
     fn test_default_retry_policy_alive() {
         let err = Status::new(tonic::Code::Unknown, "test error");
         let result = DefaultRetryPolicy::should_retry(&err, 1);
-        assert_eq!(
-            result,
-            RetryPolicyResult(ServerStatus::Alive, RetryTime::DoNotRetry)
-        );
+        assert_eq!(result, (ServerStatus::Alive, RetryTime::DoNotRetry));
     }
 
     #[test]
@@ -98,9 +94,6 @@ mod tests {
 
         let err = Status::from_error(Box::new(TestError));
         let result = DefaultRetryPolicy::should_retry(&err, 1);
-        assert_eq!(
-            result,
-            RetryPolicyResult(ServerStatus::Dead, RetryTime::Immediately)
-        );
+        assert_eq!(result, (ServerStatus::Dead, RetryTime::Immediately));
     }
 }
