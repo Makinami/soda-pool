@@ -126,7 +126,7 @@ impl GrpcClientMethod {
                             return Ok(response);
                         }
                         Err(e) => {
-                            let ::auto_discovery::RetryCheckResult(server_status, retry_time) = RP::should_retry(&e, tries);
+                            let ::auto_discovery::RetryPolicyResult(server_status, retry_time) = RP::should_retry(&e, tries);
                             if matches!(server_status, ::auto_discovery::ServerStatus::Dead) {
                                 // If the server is dead, we should report it.
                                 self.pool.report_broken(ip_address).await;

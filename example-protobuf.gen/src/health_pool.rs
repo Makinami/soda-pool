@@ -14,9 +14,7 @@ pub mod health_client {
             endpoint: ::auto_discovery::EndpointTemplate,
         ) -> std::result::Result<Self, ::auto_discovery::ChannelPoolBuilderError> {
             Ok(Self {
-                pool: ::auto_discovery::ChannelPoolBuilder::new(endpoint)
-                    .build()
-                    .await?,
+                pool: ::auto_discovery::ChannelPoolBuilder::new(endpoint).build().await?,
             })
         }
     }
@@ -29,14 +27,20 @@ pub mod health_client {
         pub async fn is_alive(
             &self,
             request: impl tonic::IntoRequest<()>,
-        ) -> std::result::Result<tonic::Response<super::IsAliveResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::IsAliveResponse>,
+            tonic::Status,
+        > {
             self.is_alive_with_retry::<::auto_discovery::DefaultRetryPolicy>(request)
                 .await
         }
         pub async fn is_alive_with_retry<RP: ::auto_discovery::RetryPolicy>(
             &self,
             request: impl tonic::IntoRequest<()>,
-        ) -> std::result::Result<tonic::Response<super::IsAliveResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::IsAliveResponse>,
+            tonic::Status,
+        > {
             let (metadata, extensions, message) = request.into_request().into_parts();
             let mut tries = 0;
             loop {
@@ -45,7 +49,7 @@ pub mod health_client {
                     .pool
                     .get_channel()
                     .await
-                    .ok_or_else(|| tonic::Status::unavailable("No ready channels"))?;
+                    .ok_or_else(|| { tonic::Status::unavailable("No ready channels") })?;
                 let request = tonic::Request::from_parts(
                     metadata.clone(),
                     extensions.clone(),
@@ -57,9 +61,13 @@ pub mod health_client {
                         return Ok(response);
                     }
                     Err(e) => {
-                        let ::auto_discovery::RetryCheckResult(server_status, retry_time) =
-                            RP::should_retry(&e, tries);
-                        if matches!(server_status, ::auto_discovery::ServerStatus::Dead) {
+                        let ::auto_discovery::RetryPolicyResult(
+                            server_status,
+                            retry_time,
+                        ) = RP::should_retry(&e, tries);
+                        if matches!(
+                            server_status, ::auto_discovery::ServerStatus::Dead
+                        ) {
                             self.pool.report_broken(ip_address).await;
                         }
                         match retry_time {
@@ -93,9 +101,7 @@ pub mod echo_client {
             endpoint: ::auto_discovery::EndpointTemplate,
         ) -> std::result::Result<Self, ::auto_discovery::ChannelPoolBuilderError> {
             Ok(Self {
-                pool: ::auto_discovery::ChannelPoolBuilder::new(endpoint)
-                    .build()
-                    .await?,
+                pool: ::auto_discovery::ChannelPoolBuilder::new(endpoint).build().await?,
             })
         }
     }
@@ -124,7 +130,7 @@ pub mod echo_client {
                     .pool
                     .get_channel()
                     .await
-                    .ok_or_else(|| tonic::Status::unavailable("No ready channels"))?;
+                    .ok_or_else(|| { tonic::Status::unavailable("No ready channels") })?;
                 let request = tonic::Request::from_parts(
                     metadata.clone(),
                     extensions.clone(),
@@ -136,9 +142,13 @@ pub mod echo_client {
                         return Ok(response);
                     }
                     Err(e) => {
-                        let ::auto_discovery::RetryCheckResult(server_status, retry_time) =
-                            RP::should_retry(&e, tries);
-                        if matches!(server_status, ::auto_discovery::ServerStatus::Dead) {
+                        let ::auto_discovery::RetryPolicyResult(
+                            server_status,
+                            retry_time,
+                        ) = RP::should_retry(&e, tries);
+                        if matches!(
+                            server_status, ::auto_discovery::ServerStatus::Dead
+                        ) {
                             self.pool.report_broken(ip_address).await;
                         }
                         match retry_time {

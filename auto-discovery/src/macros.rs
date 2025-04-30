@@ -1,4 +1,5 @@
 #[macro_export]
+#[doc(hidden)]
 macro_rules! define_client {
     ($client_type:ident) => {
         #[derive(Clone)]
@@ -40,6 +41,7 @@ macro_rules! define_client {
 }
 
 #[macro_export]
+#[doc(hidden)]
 macro_rules! define_method {
     ($client:ident, $name:ident, $request:ty, $response:ty) => {
         $crate::deps::paste! {
@@ -78,7 +80,7 @@ macro_rules! define_method {
                             return Ok(response);
                         }
                         Err(e) => {
-                            let $crate::RetryCheckResult(server_status, retry_time) = RP::should_retry(&e, tries);
+                            let $crate::RetryPolicyResult(server_status, retry_time) = RP::should_retry(&e, tries);
                             if matches!(server_status, $crate::ServerStatus::Dead) {
                                 // If the server is dead, we should report it.
                                 self.pool.report_broken(ip_address).await;
