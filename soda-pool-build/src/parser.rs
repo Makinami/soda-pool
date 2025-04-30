@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn ok() {
-        let syntax: File = syn::parse_str(include_str!("test_cases/success.rs")).unwrap();
+        let syntax: File = syn::parse_str(include_str!("test_cases/parser_success.rs")).unwrap();
         let actual = find_client_modules(&syntax)
             .map(parse_grpc_client_module)
             .collect::<BuilderResult<Vec<_>>>()
