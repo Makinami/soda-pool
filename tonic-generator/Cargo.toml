@@ -6,6 +6,6 @@ edition = { workspace = true }
 [dependencies]
 prost-build = { workspace = true }
 tonic-build = { workspace = true }
-tonic-pool-build = { path = "../tonic-pool-build" }
+soda-pool-build = { path = "../soda-pool-build" }
 
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }

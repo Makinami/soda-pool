@@ -184,6 +184,7 @@ impl Drop for AbortOnDrop {
     }
 }
 
+/// Self-managed pool of tonic's [`Channel`]s.
 // todo-performance: Need to change to INNER pattern to avoid cloning multiple Arcs.
 #[derive(Clone, Debug)]
 pub struct ChannelPool {
@@ -196,6 +197,29 @@ pub struct ChannelPool {
 }
 
 impl ChannelPool {
+    /// Get a channel from the pool.
+    ///
+    /// This function will return a channel if one is available, or `None` if no
+    /// channels are available.
+    ///
+    /// ## Selection algorithm
+    ///
+    /// Currently, the channel is selected randomly from the pool of available
+    /// channels. However, this behavior may change in the future.
+    ///
+    /// ## Additional DNS and broken connection checks
+    ///
+    /// If no channels are available, the function will check the DNS and recheck connections to all
+    /// servers currently marked as dead. To avoid spamming the DNS and other
+    /// servers, this will be performed no more than once every 500ms.
+    ///
+    /// If the above check is running while this function is called, the function
+    /// will wait for the check to finish and return the result.
+    ///
+    /// If the check is not running, but the last check was performed less than 500ms ago,
+    /// the function will return `None` immediately.
+    ///
+    /// The specifics of this behavior are not set in stone and may change in the future.
     pub async fn get_channel(&self) -> Option<(IpAddr, Channel)> {
         static RECHECK_BROKEN_ENDPOINTS: RwLock<DateTime<Utc>> =
             RwLock::const_new(DateTime::<Utc>::MIN_UTC);
@@ -222,6 +246,9 @@ impl ChannelPool {
                 guard
             }
             Err(_) => {
+                // RECHECK_BROKEN_ENDPOINTS used here to wait until ready channels and broken endpoints are checked.
+                // Thus, there is no need to hold the lock after acquiring it.
+                // (Some other implementation might be worth considering, but this is a good start.)
                 let _ = RECHECK_BROKEN_ENDPOINTS.write().await;
                 return self.ready_clients.get_any().await;
             }
@@ -257,6 +284,9 @@ impl ChannelPool {
         fut.select_next_some().await
     }
 
+    /// Report a broken endpoint to the pool.
+    ///
+    /// This function will remove the endpoint from the pool and add it to the list of currently dead servers.
     pub async fn report_broken(&self, ip_address: IpAddr) {
         self.ready_clients.remove(ip_address).await;
         self.broken_endpoints.add_address(ip_address).await;

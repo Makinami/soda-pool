@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use auto_discovery::{EndpointTemplate, RetryPolicyResult, RetryTime, ServerStatus};
+use soda_pool::{EndpointTemplate, RetryPolicyResult, RetryTime, ServerStatus};
 use example_protobuf::health_pool::health_client::HealthClientPool;
 use tokio::{task::JoinSet, time::interval};
 use tracing::info;
@@ -12,7 +12,7 @@ use tracing_subscriber::EnvFilter;
 use url::Url;
 
 struct AlwaysRetry;
-impl auto_discovery::RetryPolicy for AlwaysRetry {
+impl soda_pool::RetryPolicy for AlwaysRetry {
     fn should_retry(_error: &tonic::Status, _tries: usize) -> RetryPolicyResult {
         RetryPolicyResult(ServerStatus::Dead, RetryTime::Immediately)
     }

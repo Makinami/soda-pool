@@ -17,7 +17,7 @@ fn main() {
         .compile_protos_with_config(config, &["./proto/example.proto"], &["./proto"])
         .expect("failed to compile proto file");
 
-    tonic_pool_build::configure()
+    soda_pool_build::configure()
         .dir("./example-protobuf.gen/src")
         .build_pools(&["health"])
         .expect("failed to wrap services");

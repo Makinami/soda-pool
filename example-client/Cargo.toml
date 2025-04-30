@@ -11,4 +11,4 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url = { workspace = true }
 
 example-protobuf = { path = "../example-protobuf.gen" }
-auto-discovery = { path = "../auto-discovery" }
+soda-pool = { path = "../soda-pool" }

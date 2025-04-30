@@ -1,6 +1,6 @@
 use std::{str::FromStr, sync::atomic::AtomicBool};
 
-use auto_discovery::EndpointTemplate;
+use soda_pool::EndpointTemplate;
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use example_protobuf::{WrappedClient, health_client::HealthClient};
 use futures::future::try_join_all;

@@ -1,4 +1,4 @@
-use auto_discovery::{define_client, define_method};
+use soda_pool::{define_client, define_method};
 
 use super::health::health_client::HealthClient;
 

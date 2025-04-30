@@ -4,22 +4,22 @@ pub mod health_client {
     use super::super::health::health_client::*;
     #[derive(Clone)]
     pub struct HealthClientPool {
-        pool: ::auto_discovery::ChannelPool,
+        pool: ::soda_pool::ChannelPool,
     }
     impl HealthClientPool {
-        pub async fn new(pool: ::auto_discovery::ChannelPool) -> Self {
+        pub async fn new(pool: ::soda_pool::ChannelPool) -> Self {
             Self { pool }
         }
         pub async fn new_from_endpoint(
-            endpoint: ::auto_discovery::EndpointTemplate,
-        ) -> std::result::Result<Self, ::auto_discovery::ChannelPoolBuilderError> {
+            endpoint: ::soda_pool::EndpointTemplate,
+        ) -> std::result::Result<Self, ::soda_pool::ChannelPoolBuilderError> {
             Ok(Self {
-                pool: ::auto_discovery::ChannelPoolBuilder::new(endpoint).build().await?,
+                pool: ::soda_pool::ChannelPoolBuilder::new(endpoint).build().await?,
             })
         }
     }
-    impl From<::auto_discovery::ChannelPool> for HealthClientPool {
-        fn from(pool: ::auto_discovery::ChannelPool) -> Self {
+    impl From<::soda_pool::ChannelPool> for HealthClientPool {
+        fn from(pool: ::soda_pool::ChannelPool) -> Self {
             Self { pool }
         }
     }
@@ -31,10 +31,10 @@ pub mod health_client {
             tonic::Response<super::IsAliveResponse>,
             tonic::Status,
         > {
-            self.is_alive_with_retry::<::auto_discovery::DefaultRetryPolicy>(request)
+            self.is_alive_with_retry::<::soda_pool::DefaultRetryPolicy>(request)
                 .await
         }
-        pub async fn is_alive_with_retry<RP: ::auto_discovery::RetryPolicy>(
+        pub async fn is_alive_with_retry<RP: ::soda_pool::RetryPolicy>(
             &self,
             request: impl tonic::IntoRequest<()>,
         ) -> std::result::Result<
@@ -61,24 +61,24 @@ pub mod health_client {
                         return Ok(response);
                     }
                     Err(e) => {
-                        let ::auto_discovery::RetryPolicyResult(
+                        let ::soda_pool::RetryPolicyResult(
                             server_status,
                             retry_time,
                         ) = RP::should_retry(&e, tries);
                         if matches!(
-                            server_status, ::auto_discovery::ServerStatus::Dead
+                            server_status, ::soda_pool::ServerStatus::Dead
                         ) {
                             self.pool.report_broken(ip_address).await;
                         }
                         match retry_time {
-                            ::auto_discovery::RetryTime::DoNotRetry => {
+                            ::soda_pool::RetryTime::DoNotRetry => {
                                 return Err(e);
                             }
-                            ::auto_discovery::RetryTime::Immediately => {
+                            ::soda_pool::RetryTime::Immediately => {
                                 continue;
                             }
-                            ::auto_discovery::RetryTime::After(duration) => {
-                                ::auto_discovery::deps::sleep(duration).await;
+                            ::soda_pool::RetryTime::After(duration) => {
+                                ::soda_pool::deps::sleep(duration).await;
                             }
                         }
                     }
@@ -91,22 +91,22 @@ pub mod echo_client {
     use super::super::health::echo_client::*;
     #[derive(Clone)]
     pub struct EchoClientPool {
-        pool: ::auto_discovery::ChannelPool,
+        pool: ::soda_pool::ChannelPool,
     }
     impl EchoClientPool {
-        pub async fn new(pool: ::auto_discovery::ChannelPool) -> Self {
+        pub async fn new(pool: ::soda_pool::ChannelPool) -> Self {
             Self { pool }
         }
         pub async fn new_from_endpoint(
-            endpoint: ::auto_discovery::EndpointTemplate,
-        ) -> std::result::Result<Self, ::auto_discovery::ChannelPoolBuilderError> {
+            endpoint: ::soda_pool::EndpointTemplate,
+        ) -> std::result::Result<Self, ::soda_pool::ChannelPoolBuilderError> {
             Ok(Self {
-                pool: ::auto_discovery::ChannelPoolBuilder::new(endpoint).build().await?,
+                pool: ::soda_pool::ChannelPoolBuilder::new(endpoint).build().await?,
             })
         }
     }
-    impl From<::auto_discovery::ChannelPool> for EchoClientPool {
-        fn from(pool: ::auto_discovery::ChannelPool) -> Self {
+    impl From<::soda_pool::ChannelPool> for EchoClientPool {
+        fn from(pool: ::soda_pool::ChannelPool) -> Self {
             Self { pool }
         }
     }
@@ -115,10 +115,10 @@ pub mod echo_client {
             &self,
             request: impl tonic::IntoRequest<super::EchoRequest>,
         ) -> std::result::Result<tonic::Response<super::EchoResponse>, tonic::Status> {
-            self.echo_message_with_retry::<::auto_discovery::DefaultRetryPolicy>(request)
+            self.echo_message_with_retry::<::soda_pool::DefaultRetryPolicy>(request)
                 .await
         }
-        pub async fn echo_message_with_retry<RP: ::auto_discovery::RetryPolicy>(
+        pub async fn echo_message_with_retry<RP: ::soda_pool::RetryPolicy>(
             &self,
             request: impl tonic::IntoRequest<super::EchoRequest>,
         ) -> std::result::Result<tonic::Response<super::EchoResponse>, tonic::Status> {
@@ -142,24 +142,24 @@ pub mod echo_client {
                         return Ok(response);
                     }
                     Err(e) => {
-                        let ::auto_discovery::RetryPolicyResult(
+                        let ::soda_pool::RetryPolicyResult(
                             server_status,
                             retry_time,
                         ) = RP::should_retry(&e, tries);
                         if matches!(
-                            server_status, ::auto_discovery::ServerStatus::Dead
+                            server_status, ::soda_pool::ServerStatus::Dead
                         ) {
                             self.pool.report_broken(ip_address).await;
                         }
                         match retry_time {
-                            ::auto_discovery::RetryTime::DoNotRetry => {
+                            ::soda_pool::RetryTime::DoNotRetry => {
                                 return Err(e);
                             }
-                            ::auto_discovery::RetryTime::Immediately => {
+                            ::soda_pool::RetryTime::Immediately => {
                                 continue;
                             }
-                            ::auto_discovery::RetryTime::After(duration) => {
-                                ::auto_discovery::deps::sleep(duration).await;
+                            ::soda_pool::RetryTime::After(duration) => {
+                                ::soda_pool::deps::sleep(duration).await;
                             }
                         }
                     }

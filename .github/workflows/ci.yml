@@ -94,8 +94,8 @@ jobs:
   #     - uses: actions/checkout@v4
   #     - uses: dtolnay/rust-toolchain@nightly
   #     - uses: dtolnay/install@cargo-docs-rs
-  #     - run: cargo docs-rs -p auto-discovery
-  #     - run: cargo docs-rs -p tonic-pool-build
+  #     - run: cargo docs-rs -p soda-pool
+  #     - run: cargo docs-rs -p soda-pool-build
 
   # doc-test:
   #   runs-on: ubuntu-latest
