@@ -55,25 +55,25 @@ impl GrpcClientImpl {
         quote! {
             #[derive(Clone)]
             pub struct #client_pool_ident {
-                pool: ::soda_pool::ChannelPool,
+                pool: soda_pool::ChannelPool,
             }
 
             impl #client_pool_ident {
-                pub async fn new(pool: ::soda_pool::ChannelPool) -> Self {
+                pub async fn new(pool: soda_pool::ChannelPool) -> Self {
                     Self { pool }
                 }
 
-                pub async fn new_from_endpoint(endpoint: ::soda_pool::EndpointTemplate) -> std::result::Result<Self, ::soda_pool::ChannelPoolBuilderError> {
+                pub async fn new_from_endpoint(endpoint: soda_pool::EndpointTemplate) -> std::result::Result<Self, soda_pool::ChannelPoolBuilderError> {
                     Ok(Self {
-                        pool: ::soda_pool::ChannelPoolBuilder::new(endpoint)
+                        pool: soda_pool::ChannelPoolBuilder::new(endpoint)
                             .build()
                             .await?,
                     })
                 }
             }
 
-            impl From<::soda_pool::ChannelPool> for #client_pool_ident {
-                fn from(pool: ::soda_pool::ChannelPool) -> Self {
+            impl From<soda_pool::ChannelPool> for #client_pool_ident {
+                fn from(pool: soda_pool::ChannelPool) -> Self {
                     Self { pool }
                 }
             }
@@ -96,15 +96,15 @@ impl GrpcClientMethod {
         quote! {
             pub async fn #method_name(
                 &self,
-                #request_param // Will be MUCH better to extract actual inner type rather than using the whole parameter. Same for response.
-            ) -> #response_type {
-                self.#method_name_with_retry::<::soda_pool::DefaultRetryPolicy>(request).await
+                request: impl tonic::IntoRequest<#request_param>,
+            ) -> std::result::Result<tonic::Response<#response_type>, tonic::Status> {
+                self.#method_name_with_retry::<soda_pool::DefaultRetryPolicy>(request).await
             }
 
-            pub async fn #method_name_with_retry<RP: ::soda_pool::RetryPolicy>(
+            pub async fn #method_name_with_retry<RP: soda_pool::RetryPolicy>(
                 &self,
-                #request_param
-            ) -> #response_type {
+                request: impl tonic::IntoRequest<#request_param>,
+            ) -> std::result::Result<tonic::Response<#response_type>, tonic::Status> {
                 let (metadata, extensions, message) = request.into_request().into_parts();
                 let mut tries = 0;
                 loop {
@@ -126,25 +126,25 @@ impl GrpcClientMethod {
                             return Ok(response);
                         }
                         Err(e) => {
-                            let ::soda_pool::RetryPolicyResult(server_status, retry_time) = RP::should_retry(&e, tries);
-                            if matches!(server_status, ::soda_pool::ServerStatus::Dead) {
+                            let soda_pool::RetryPolicyResult(server_status, retry_time) = RP::should_retry(&e, tries);
+                            if matches!(server_status, soda_pool::ServerStatus::Dead) {
                                 // If the server is dead, we should report it.
                                 self.pool.report_broken(ip_address).await;
                             }
 
                             match retry_time {
-                                ::soda_pool::RetryTime::DoNotRetry => {
+                                soda_pool::RetryTime::DoNotRetry => {
                                     // Do not retry and do not report broken endpoint.
                                     return Err(e);
                                 }
-                                ::soda_pool::RetryTime::Immediately => {
+                                soda_pool::RetryTime::Immediately => {
                                     // Retry immediately.
                                     continue;
                                 }
-                                ::soda_pool::RetryTime::After(duration) => {
+                                soda_pool::RetryTime::After(duration) => {
                                     // Wait for the specified duration before retrying.
                                     // todo-interface: Don't require client to have tokio dependency.
-                                    ::soda_pool::deps::sleep(duration).await;
+                                    soda_pool::deps::sleep(duration).await;
                                 }
                             }
                         }

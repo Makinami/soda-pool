@@ -1,4 +1,4 @@
-use syn::{Ident, PatType, Type};
+use syn::{Ident, Type};
 
 #[derive(Debug)]
 pub(crate) struct GrpcClientFile {
@@ -21,6 +21,6 @@ pub(crate) struct GrpcClientImpl {
 #[derive(Debug)]
 pub(crate) struct GrpcClientMethod {
     pub(crate) name: Ident,
-    pub(crate) request_type: PatType,
+    pub(crate) request_type: Type,
     pub(crate) response_type: Type,
 }

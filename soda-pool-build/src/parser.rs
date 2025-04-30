@@ -2,8 +2,9 @@ use std::{fs, io, path::PathBuf};
 
 use proc_macro2::Span;
 use syn::{
-    FnArg, Ident, ImplItem, ImplItemFn, Item, ItemImpl, ItemMod, PathSegment, ReturnType, Type,
+    FnArg, Ident, ImplItem, ImplItemFn, Item, ItemImpl, ItemMod, PatType, PathSegment, ReturnType, Type, TypeImplTrait
 };
+use tracing::warn;
 
 use crate::{
     error::{BuilderError, BuilderResult},
@@ -112,29 +113,51 @@ fn find_grpc_methods(impl_item: &ItemImpl) -> impl Iterator<Item = &ImplItemFn> 
         .filter(|method| is_grpc_method(method))
 }
 
-// todo-cleanup: Reimplement it more cleanly.
 fn is_grpc_method(method: &ImplItemFn) -> bool {
     let mut inputs = method.sig.inputs.iter();
-    match (inputs.next(), inputs.next()) {
-        (Some(syn::FnArg::Receiver(_)), Some(syn::FnArg::Typed(pat))) => match &*pat.ty {
-            syn::Type::ImplTrait(type_impl_trait) => {
-                type_impl_trait.bounds.iter().any(|bound| match bound {
-                    syn::TypeParamBound::Trait(trait_bound) => {
-                        let mut segments = trait_bound.path.segments.iter();
-                        match (segments.next(), segments.next()) {
-                            (
-                                Some(PathSegment { ident: ident1, .. }),
-                                Some(PathSegment { ident: ident2, .. }),
-                            ) => ident1 == "tonic" && ident2 == "IntoRequest",
-                            _ => false,
-                        }
-                    }
-                    _ => false,
+    let first_arg_type = match (inputs.next(), inputs.next()) {
+        (Some(syn::FnArg::Receiver(_)), Some(syn::FnArg::Typed(pat))) => &*pat.ty,
+        _ => return false,
+    };
+
+    let trait_bound = match first_arg_type {
+        syn::Type::ImplTrait(type_impl_trait) => {
+            match type_impl_trait
+                .bounds
+                .iter()
+                .filter_map(|bound| match bound {
+                    syn::TypeParamBound::Trait(trait_bound) => Some(trait_bound),
+                    _ => None,
                 })
+                .next()
+            {
+                Some(trait_bound) => trait_bound,
+                None => return false,
             }
-            _ => false,
-        },
-        _ => false,
+        }
+        _ => return false,
+    };
+
+    let mut segments = trait_bound.path.segments.iter();
+    let tonic_into_type = match (segments.next(), segments.next()) {
+        (Some(PathSegment { ident: ident1, .. }), Some(PathSegment { ident: ident2, .. }))
+            if ident1 == "tonic" =>
+        {
+            ident2
+        }
+        _ => return false,
+    };
+
+    if tonic_into_type == "IntoRequest" {
+        true
+    } else if tonic_into_type == "IntoStreamingRequest" {
+        // Note: I would like to support this, but don't have enough experience
+        // with streaming to even begin to imagine how to support retrying.
+        // Maybe I could implement only non-retrying version for now?
+        warn!("Streaming request is not supported yet");
+        false
+    } else {
+        false
     }
 }
 
@@ -142,18 +165,102 @@ fn parse_grpc_method(method: &ImplItemFn) -> BuilderResult<GrpcClientMethod> {
     let mut inputs = method.sig.inputs.iter();
 
     // todo: really want just the internal type of the request itself; not the entire parameter
-    let Some(FnArg::Typed(request_type)) = inputs.nth(1) else {
+    let Some(FnArg::Typed(PatType { ty: request_arg_type, .. })) = inputs.nth(1) else {
         return Err(BuilderError::UnexpectedStructure);
     };
+    let request_type = get_into_request_type(request_arg_type)?.to_owned();
 
-    // todo: really want just the internal type of the response itself; not the entire return type
-    let ReturnType::Type(_, ref response_type) = method.sig.output else {
-        return Err(BuilderError::UnexpectedStructure);
-    };
+    let response_success_type = get_result_success_type(&method.sig.output)?;
+    let response_type = get_tonic_response_type(response_success_type)?.to_owned();
 
     Ok(GrpcClientMethod {
         name: method.sig.ident.clone(),
-        request_type: request_type.clone(),
-        response_type: (**response_type).clone(),
+        request_type,
+        response_type,
     })
+}
+
+fn get_result_success_type(return_type: &ReturnType) -> BuilderResult<&Type> {
+    match return_type {
+        ReturnType::Type(_, ty) => match **ty {
+            Type::Path(ref type_path) => {
+                if let Some(segment) = type_path.path.segments.last() {
+                    if segment.ident == "Result" {
+                        if let syn::PathArguments::AngleBracketed(ref args) = segment.arguments {
+                            if let Some(syn::GenericArgument::Type(ty)) = args.args.first() {
+                                return Ok(&ty);
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+
+    Err(BuilderError::UnexpectedStructure)
+}
+
+fn get_tonic_response_type(
+    response_type: &Type,
+) -> BuilderResult<&Type> {
+    match response_type {
+        syn::Type::Path(type_path) => {
+            if let Some(segment) = type_path.path.segments.last() {
+                if segment.ident == "Response" {
+                    if let syn::PathArguments::AngleBracketed(ref args) = segment.arguments {
+                        if let Some(syn::GenericArgument::Type(ty)) = args.args.first() {
+                            return Ok(&ty);
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    Err(BuilderError::UnexpectedStructure)
+}
+
+
+fn get_into_request_type(
+    request_type: &Type,
+) -> BuilderResult<&Type> {
+    match request_type {
+        syn::Type::Path(type_path) => {
+            if let Some(segment) = type_path.path.segments.last() {
+                if segment.ident == "IntoRequest" {
+                    if let syn::PathArguments::AngleBracketed(ref args) = segment.arguments {
+                        if let Some(syn::GenericArgument::Type(ty)) = args.args.first() {
+                            return Ok(&ty);
+                        }
+                    }
+                }
+            }
+        }
+        syn::Type::ImplTrait(TypeImplTrait {
+            bounds: type_impl_trait,
+            ..
+        }) => {
+            match type_impl_trait.first() {
+                Some(syn::TypeParamBound::Trait(trait_bound)) => {
+                    if let Some(segment) = trait_bound.path.segments.last() {
+                        if segment.ident == "IntoRequest" {
+                            if let syn::PathArguments::AngleBracketed(ref args) = segment.arguments {
+                                if let Some(syn::GenericArgument::Type(ty)) = args.args.first() {
+                                    return Ok(&ty);
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        _ => {}
+    }
+
+    Err(BuilderError::UnexpectedStructure)
+}
 }

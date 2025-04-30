@@ -9,4 +9,5 @@ pub use health::*;
 mod wrapped;
 pub use wrapped::*;
 
+#[rustfmt::skip]
 pub mod health_pool;
