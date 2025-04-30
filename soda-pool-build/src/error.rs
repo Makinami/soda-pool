@@ -1,10 +1,26 @@
 pub(crate) type BuilderResult<R> = std::result::Result<R, BuilderError>;
 
+/// Possible errors during pooled client generation.
 #[derive(Debug)]
 pub enum BuilderError {
+    /// Unexpected structure of basic gRPC client file.
+    ///
+    /// This error occurs when basic gRPC client code does not match structure expected from supported tonic-build version.
     UnexpectedStructure,
+
+    /// Missing configuration.
+    ///
+    /// This error occurs when [`SodaPoolBuilder::build_pools`](crate::SodaPoolBuilder::build_pools) method is called before all required settings are provided.
     MissingConfiguration(String),
+
+    /// I/O error.
+    ///
+    /// This wraps any I/O error that occurs during file operations.
     IoError(std::io::Error),
+
+    /// Syn error.
+    ///
+    /// This wraps any error that occurs during parsing Rust code using the `syn` crate.
     SynError(syn::Error),
 }
 

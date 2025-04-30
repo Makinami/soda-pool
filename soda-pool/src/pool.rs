@@ -3,7 +3,7 @@ use std::{collections::BinaryHeap, net::IpAddr, sync::Arc, time::Duration};
 use chrono::{DateTime, TimeDelta, Utc};
 use futures::{FutureExt, StreamExt, stream::FuturesUnordered};
 use tokio::{
-    sync::{RwLock, oneshot::channel},
+    sync::RwLock,
     task::{AbortHandle, JoinHandle},
     time::interval,
 };
@@ -17,18 +17,15 @@ use crate::{
     ready_channels::ReadyChannels,
 };
 
+/// Builder for creating a [`ChannelPool`].
 #[derive(Debug)]
 pub struct ChannelPoolBuilder {
     endpoint: EndpointTemplate,
     dns_interval: Duration,
 }
 
-#[derive(Debug)]
-pub enum ChannelPoolBuilderError {
-    FailedToInitiate,
-}
-
 impl ChannelPoolBuilder {
+    /// Create a new [`ChannelPoolBuilder`] from the given endpoint template.
     pub fn new(endpoint: EndpointTemplate) -> Self {
         Self {
             endpoint,
@@ -37,19 +34,24 @@ impl ChannelPoolBuilder {
         }
     }
 
+    /// Set the DNS check interval.
+    ///
+    /// Set how often the resulting pool will check the DNS for new IP
+    /// addresses. Default is 5 seconds.
     #[must_use]
     pub fn dns_interval(mut self, dns_interval: Duration) -> Self {
         self.dns_interval = dns_interval;
         self
     }
 
-    // todo-interface: Consider error type that will be returned when DNS lookup fails or times out.
-    pub async fn build(self) -> Result<ChannelPool, ChannelPoolBuilderError> {
+    /// Build the [`ChannelPool`].
+    ///
+    /// This function will create a new channel pool from the given endpoint
+    /// template and settings. This includes starting channel pool's background
+    /// tasks.
+    pub fn build(self) -> ChannelPool {
         let ready_clients = Arc::new(ReadyChannels::default());
         let broken_endpoints = Arc::new(BrokenEndpoints::default());
-
-        let (initiated_send, initiated_recv) = channel();
-        let mut initiated_send = Some(initiated_send);
 
         let dns_lookup_task = {
             // Get shared ownership of the resources.
@@ -61,10 +63,6 @@ impl ChannelPoolBuilder {
                 let mut interval = interval(self.dns_interval);
                 loop {
                     check_dns(&endpoint, &ready_clients, &broken_endpoints).await;
-
-                    if let Some(initiated_send) = initiated_send.take() {
-                        let _ = initiated_send.send(());
-                    }
 
                     interval.tick().await;
                 }
@@ -91,20 +89,13 @@ impl ChannelPoolBuilder {
             })
         };
 
-        match initiated_recv.await {
-            Ok(()) => {}
-            Err(_) => {
-                return Err(ChannelPoolBuilderError::FailedToInitiate);
-            }
-        }
-
-        Ok(ChannelPool {
+        ChannelPool {
             template: Arc::new(self.endpoint),
             ready_clients,
             broken_endpoints,
             _dns_lookup_task: Arc::new(dns_lookup_task.into()),
             _doctor_task: Arc::new(doctor_task.into()),
-        })
+        }
     }
 }
 

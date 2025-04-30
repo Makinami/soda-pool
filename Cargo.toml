@@ -36,15 +36,11 @@ url = "2.5.4"
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage,coverage_nightly)'] }
 missing_debug_implementations = { level = "warn" }
-#missing_docs = { level = "warn" } # todo: -> deny
+missing_docs = { level = "warn" } # todo: -> deny
 
 
 [workspace.lints.clippy]
 pedantic = "deny"
-
-# TODO: documentation
-missing_errors_doc = { level = "warn", priority = 1 }
-missing_panics_doc = { level = "warn", priority = 1 }
 
 # performance stuff, only warn
 inline_always = { level = "warn", priority = 1 }

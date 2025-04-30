@@ -63,12 +63,10 @@ impl GrpcClientImpl {
                     Self { pool }
                 }
 
-                pub async fn new_from_endpoint(endpoint: soda_pool::EndpointTemplate) -> std::result::Result<Self, soda_pool::ChannelPoolBuilderError> {
-                    Ok(Self {
-                        pool: soda_pool::ChannelPoolBuilder::new(endpoint)
-                            .build()
-                            .await?,
-                    })
+                pub fn new_from_endpoint(endpoint: soda_pool::EndpointTemplate) -> Self {
+                    Self {
+                        pool: soda_pool::ChannelPoolBuilder::new(endpoint).build(),
+                    }
                 }
             }
 

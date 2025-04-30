@@ -5,31 +5,46 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use error::{BuilderError, BuilderResult};
+mod error;
+pub use error::*;
+
+mod parser;
 use parser::parse_grpc_client_file;
 
-pub mod error;
 mod generator;
 mod model;
-mod parser;
 
+/// Create a default [`SodaPoolBuilder`].
+// Emulates the `tonic_build` interface.
 #[must_use]
-pub fn configure() -> TonicPoolBuilder {
-    TonicPoolBuilder { dir: None }
+pub fn configure() -> SodaPoolBuilder {
+    SodaPoolBuilder { dir: None }
 }
 
+/// Pooled gRPC clients generator.
 #[derive(Debug)]
-pub struct TonicPoolBuilder {
+pub struct SodaPoolBuilder {
     dir: Option<PathBuf>,
 }
 
-impl TonicPoolBuilder {
+impl SodaPoolBuilder {
+    /// Set the input/output directory of gRPC clients' files.
     #[must_use]
     pub fn dir(mut self, dir: impl AsRef<Path>) -> Self {
         self.dir = Some(dir.as_ref().to_path_buf());
         self
     }
 
+    /// Build pooled gRPC clients.
+    ///
+    /// Generate pooled version of gRPC clients from the specified files.
+    /// `services` should be a list of files (with or without `.rs` extension)
+    /// containing the original gRPC client code. Files will be searched in the
+    /// directory specified by `dir`. For each input file, a new file will be
+    /// created with the same name but with `_pool` suffix.
+    ///
+    /// # Errors
+    /// Will return [`BuilderError`] on any errors encountered during pooled clients generation.
     #[allow(clippy::missing_panics_doc)]
     pub fn build_pools(&self, services: &[impl AsRef<str>]) -> BuilderResult<()> {
         let dir = self

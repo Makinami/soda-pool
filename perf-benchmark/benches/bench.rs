@@ -1,9 +1,9 @@
 use std::{str::FromStr, sync::atomic::AtomicBool};
 
-use soda_pool::EndpointTemplate;
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use example_protobuf::{WrappedClient, health_client::HealthClient};
 use futures::future::try_join_all;
+use soda_pool::EndpointTemplate;
 use std::sync::atomic::Ordering::Relaxed;
 use tokio::runtime::Runtime;
 use tonic::{IntoRequest, Status, transport::Endpoint};
@@ -18,9 +18,7 @@ pub fn grpc_client(c: &mut Criterion) {
 
     let template = EndpointTemplate::new(Url::parse(&address).unwrap()).unwrap();
     let endpoint = Endpoint::from_str(address.as_str()).unwrap();
-    let client = runner
-        .block_on(async { WrappedClient::new(template).await })
-        .unwrap();
+    let client = WrappedClient::new(template);
 
     let test_cases = [1, 2, 4, 8, 16, 32, 64];
     let prev_test_failed = AtomicBool::new(false);

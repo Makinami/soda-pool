@@ -2,7 +2,8 @@ use std::{fs, io, path::PathBuf};
 
 use proc_macro2::Span;
 use syn::{
-    FnArg, Ident, ImplItem, ImplItemFn, Item, ItemImpl, ItemMod, PatType, PathSegment, ReturnType, Type, TypeImplTrait
+    FnArg, Ident, ImplItem, ImplItemFn, Item, ItemImpl, ItemMod, PatType, PathSegment, ReturnType,
+    Type, TypeImplTrait,
 };
 use tracing::warn;
 
@@ -122,15 +123,10 @@ fn is_grpc_method(method: &ImplItemFn) -> bool {
 
     let trait_bound = match first_arg_type {
         syn::Type::ImplTrait(type_impl_trait) => {
-            match type_impl_trait
-                .bounds
-                .iter()
-                .filter_map(|bound| match bound {
-                    syn::TypeParamBound::Trait(trait_bound) => Some(trait_bound),
-                    _ => None,
-                })
-                .next()
-            {
+            match type_impl_trait.bounds.iter().find_map(|bound| match bound {
+                syn::TypeParamBound::Trait(trait_bound) => Some(trait_bound),
+                _ => None,
+            }) {
                 Some(trait_bound) => trait_bound,
                 None => return false,
             }
@@ -165,7 +161,11 @@ fn parse_grpc_method(method: &ImplItemFn) -> BuilderResult<GrpcClientMethod> {
     let mut inputs = method.sig.inputs.iter();
 
     // todo: really want just the internal type of the request itself; not the entire parameter
-    let Some(FnArg::Typed(PatType { ty: request_arg_type, .. })) = inputs.nth(1) else {
+    let Some(FnArg::Typed(PatType {
+        ty: request_arg_type,
+        ..
+    })) = inputs.nth(1)
+    else {
         return Err(BuilderError::UnexpectedStructure);
     };
     let request_type = get_into_request_type(request_arg_type)?.to_owned();
@@ -182,58 +182,49 @@ fn parse_grpc_method(method: &ImplItemFn) -> BuilderResult<GrpcClientMethod> {
 
 fn get_result_success_type(return_type: &ReturnType) -> BuilderResult<&Type> {
     match return_type {
-        ReturnType::Type(_, ty) => match **ty {
-            Type::Path(ref type_path) => {
+        ReturnType::Type(_, ty) => {
+            if let Type::Path(ref type_path) = **ty {
                 if let Some(segment) = type_path.path.segments.last() {
                     if segment.ident == "Result" {
                         if let syn::PathArguments::AngleBracketed(ref args) = segment.arguments {
                             if let Some(syn::GenericArgument::Type(ty)) = args.args.first() {
-                                return Ok(&ty);
+                                return Ok(ty);
                             }
                         }
                     }
                 }
             }
-            _ => {}
-        },
-        _ => {}
+        }
+        ReturnType::Default => {}
     }
 
     Err(BuilderError::UnexpectedStructure)
 }
 
-fn get_tonic_response_type(
-    response_type: &Type,
-) -> BuilderResult<&Type> {
-    match response_type {
-        syn::Type::Path(type_path) => {
-            if let Some(segment) = type_path.path.segments.last() {
-                if segment.ident == "Response" {
-                    if let syn::PathArguments::AngleBracketed(ref args) = segment.arguments {
-                        if let Some(syn::GenericArgument::Type(ty)) = args.args.first() {
-                            return Ok(&ty);
-                        }
+fn get_tonic_response_type(response_type: &Type) -> BuilderResult<&Type> {
+    if let syn::Type::Path(type_path) = response_type {
+        if let Some(segment) = type_path.path.segments.last() {
+            if segment.ident == "Response" {
+                if let syn::PathArguments::AngleBracketed(ref args) = segment.arguments {
+                    if let Some(syn::GenericArgument::Type(ty)) = args.args.first() {
+                        return Ok(ty);
                     }
                 }
             }
         }
-        _ => {}
     }
 
     Err(BuilderError::UnexpectedStructure)
 }
 
-
-fn get_into_request_type(
-    request_type: &Type,
-) -> BuilderResult<&Type> {
+fn get_into_request_type(request_type: &Type) -> BuilderResult<&Type> {
     match request_type {
         syn::Type::Path(type_path) => {
             if let Some(segment) = type_path.path.segments.last() {
                 if segment.ident == "IntoRequest" {
                     if let syn::PathArguments::AngleBracketed(ref args) = segment.arguments {
                         if let Some(syn::GenericArgument::Type(ty)) = args.args.first() {
-                            return Ok(&ty);
+                            return Ok(ty);
                         }
                     }
                 }
@@ -243,19 +234,16 @@ fn get_into_request_type(
             bounds: type_impl_trait,
             ..
         }) => {
-            match type_impl_trait.first() {
-                Some(syn::TypeParamBound::Trait(trait_bound)) => {
-                    if let Some(segment) = trait_bound.path.segments.last() {
-                        if segment.ident == "IntoRequest" {
-                            if let syn::PathArguments::AngleBracketed(ref args) = segment.arguments {
-                                if let Some(syn::GenericArgument::Type(ty)) = args.args.first() {
-                                    return Ok(&ty);
-                                }
+            if let Some(syn::TypeParamBound::Trait(trait_bound)) = type_impl_trait.first() {
+                if let Some(segment) = trait_bound.path.segments.last() {
+                    if segment.ident == "IntoRequest" {
+                        if let syn::PathArguments::AngleBracketed(ref args) = segment.arguments {
+                            if let Some(syn::GenericArgument::Type(ty)) = args.args.first() {
+                                return Ok(ty);
                             }
                         }
                     }
                 }
-                _ => {}
             }
         }
         _ => {}
@@ -276,38 +264,31 @@ mod tests {
         let syntax: File = syn::parse_str(include_str!("test_cases/success.rs")).unwrap();
         let actual = find_client_modules(&syntax)
             .map(parse_grpc_client_module)
-            .collect::<BuilderResult<Vec<_>>>().unwrap();
+            .collect::<BuilderResult<Vec<_>>>()
+            .unwrap();
         let expected = vec![
             GrpcClientModule {
                 name: Ident::new("health_client", Span::call_site()),
-                clients: vec![
-                    GrpcClientImpl {
-                        name: Ident::new("HealthClient", Span::call_site()),
-                        methods: vec![
-                            GrpcClientMethod {
-                                name: Ident::new("is_alive", Span::call_site()),
-                                request_type: syn::parse_str("()").unwrap(),
-                                response_type: syn::parse_str("super::IsAliveResponse").unwrap(),
-                            },
-                        ],
-                    }
-                ]
+                clients: vec![GrpcClientImpl {
+                    name: Ident::new("HealthClient", Span::call_site()),
+                    methods: vec![GrpcClientMethod {
+                        name: Ident::new("is_alive", Span::call_site()),
+                        request_type: syn::parse_str("()").unwrap(),
+                        response_type: syn::parse_str("super::IsAliveResponse").unwrap(),
+                    }],
+                }],
             },
             GrpcClientModule {
                 name: Ident::new("echo_client", Span::call_site()),
-                clients: vec![
-                    GrpcClientImpl {
-                        name: Ident::new("EchoClient", Span::call_site()),
-                        methods: vec![
-                            GrpcClientMethod {
-                                name: Ident::new("echo_message", Span::call_site()),
-                                request_type: syn::parse_str("super::EchoRequest").unwrap(),
-                                response_type: syn::parse_str("super::EchoResponse").unwrap(),
-                            },
-                        ],
-                    }
-                ]
-            }
+                clients: vec![GrpcClientImpl {
+                    name: Ident::new("EchoClient", Span::call_site()),
+                    methods: vec![GrpcClientMethod {
+                        name: Ident::new("echo_message", Span::call_site()),
+                        request_type: syn::parse_str("super::EchoRequest").unwrap(),
+                        response_type: syn::parse_str("super::EchoResponse").unwrap(),
+                    }],
+                }],
+            },
         ];
         assert_eq!(actual, expected);
     }

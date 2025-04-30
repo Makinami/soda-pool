@@ -39,7 +39,7 @@ pub struct EndpointTemplate {
 
 impl EndpointTemplate {
     /// Creates a new [`EndpointTemplate`] from the provided URL.
-    /// 
+    ///
     /// # Errors
     /// - Will return [`EndpointTemplateError::HostMissing`] if the provided URL does not contain a host.
     /// - Will return [`EndpointTemplateError::AlreadyIpAddress`] if the provided URL already contains an IP address.
@@ -578,6 +578,9 @@ mod tests {
         let builder = EndpointTemplate::new(url.clone()).unwrap();
 
         let debug_output = format!("{builder:?}");
-        assert_eq!(debug_output, "EndpointTemplate { url: \"http://example.com:50051/foo\", .. }");
+        assert_eq!(
+            debug_output,
+            "EndpointTemplate { url: \"http://example.com:50051/foo\", .. }"
+        );
     }
 }

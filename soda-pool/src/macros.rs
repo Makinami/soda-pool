@@ -8,10 +8,10 @@ macro_rules! define_client {
         }
 
         impl $client_type {
-            pub async fn new(endpoint: $crate::EndpointTemplate) -> Result<Self, $crate::ChannelPoolBuilderError> {
-                Ok(Self {
-                    pool: $crate::ChannelPoolBuilder::new(endpoint).build().await?,
-                })
+            pub fn new(endpoint: $crate::EndpointTemplate) -> Self {
+                Self {
+                    pool: $crate::ChannelPoolBuilder::new(endpoint).build(),
+                }
             }
         }
 
