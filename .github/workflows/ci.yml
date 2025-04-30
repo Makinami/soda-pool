@@ -88,6 +88,15 @@ jobs:
   #   - uses: Swatinem/rust-cache@v2
   #   - run: cargo nextest run --workspace --all-features
 
+  # doc:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dtolnay/rust-toolchain@nightly
+  #     - uses: dtolnay/install@cargo-docs-rs
+  #     - run: cargo docs-rs -p auto-discovery
+  #     - run: cargo docs-rs -p tonic-pool-build
+
   # doc-test:
   #   runs-on: ubuntu-latest
   #   steps:
@@ -104,4 +113,4 @@ jobs:
   #     with:
   #       feature-group: all-features
 
-# https://github.com/taiki-e/cargo-llvm-cov
+# Coverage? https://github.com/taiki-e/cargo-llvm-cov
