@@ -1,3 +1,5 @@
+use std::{error::Error, fmt::Display};
+
 pub(crate) type BuilderResult<R> = std::result::Result<R, BuilderError>;
 
 /// Possible errors during pooled client generation.
@@ -24,6 +26,7 @@ pub enum BuilderError {
     SynError(syn::Error),
 }
 
+#[doc(hidden)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 impl From<std::io::Error> for BuilderError {
     fn from(err: std::io::Error) -> Self {
@@ -31,6 +34,7 @@ impl From<std::io::Error> for BuilderError {
     }
 }
 
+#[doc(hidden)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 impl From<syn::Error> for BuilderError {
     fn from(err: syn::Error) -> Self {
@@ -41,6 +45,29 @@ impl From<syn::Error> for BuilderError {
 impl BuilderError {
     pub(crate) fn missing_configuration(key: &'static str) -> Self {
         BuilderError::MissingConfiguration(key.to_string())
+    }
+}
+
+impl Display for BuilderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BuilderError::UnexpectedStructure => {
+                write!(f, "unexpected structure of basic gRPC client file")
+            }
+            BuilderError::MissingConfiguration(key) => write!(f, "missing configuration: {}", key),
+            BuilderError::IoError(err) => write!(f, "I/O error: {}", err),
+            BuilderError::SynError(err) => write!(f, "syn error: {}", err),
+        }
+    }
+}
+
+impl Error for BuilderError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            BuilderError::IoError(err) => Some(err),
+            BuilderError::SynError(err) => Some(err),
+            _ => None,
+        }
     }
 }
 

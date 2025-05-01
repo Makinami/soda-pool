@@ -1,21 +1,26 @@
 [package]
 name = "soda-pool"
-version = "0.1.0"
+version = "0.0.1"
+license = "MIT OR Apache-2.0"
+description = "Connection pool for tonic's gRPC channels"
+repository = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }
+keywords = ["grpc", "pool", "connection", "tonic"]
+categories = ["network-programming", "web-programming"]
 
 [dependencies]
+chrono = { workspace = true }
 http = { workspace = true }
+futures = { workspace = true }
+paste = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
-chrono = { workspace = true }
-paste = { workspace = true }
-futures = { workspace = true }
-tokio-stream = { workspace = true }
 
 [features]
 mock-dns = []

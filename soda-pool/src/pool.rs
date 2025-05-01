@@ -18,17 +18,17 @@ use crate::{
 };
 
 /// Builder for creating a [`ChannelPool`].
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ChannelPoolBuilder {
     endpoint: EndpointTemplate,
     dns_interval: Duration,
 }
 
 impl ChannelPoolBuilder {
-    /// Create a new [`ChannelPoolBuilder`] from the given endpoint template.
-    pub fn new(endpoint: EndpointTemplate) -> Self {
+    /// Create a new `ChannelPoolBuilder` from the given endpoint template.
+    pub fn new(endpoint: impl Into<EndpointTemplate>) -> Self {
         Self {
-            endpoint,
+            endpoint: endpoint.into(),
             // Note: Is this a good default?
             dns_interval: Duration::from_secs(5),
         }
@@ -39,8 +39,8 @@ impl ChannelPoolBuilder {
     /// Set how often the resulting pool will check the DNS for new IP
     /// addresses. Default is 5 seconds.
     #[must_use]
-    pub fn dns_interval(mut self, dns_interval: Duration) -> Self {
-        self.dns_interval = dns_interval;
+    pub fn dns_interval(&mut self, dns_interval: impl Into<Duration>) -> &mut Self {
+        self.dns_interval = dns_interval.into();
         self
     }
 
@@ -177,7 +177,7 @@ impl Drop for AbortOnDrop {
 
 /// Self-managed pool of tonic's [`Channel`]s.
 // todo-performance: Need to change to INNER pattern to avoid cloning multiple Arcs.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ChannelPool {
     template: Arc<EndpointTemplate>,
     ready_clients: Arc<ReadyChannels>,
@@ -278,8 +278,42 @@ impl ChannelPool {
     /// Report a broken endpoint to the pool.
     ///
     /// This function will remove the endpoint from the pool and add it to the list of currently dead servers.
-    pub async fn report_broken(&self, ip_address: IpAddr) {
+    pub async fn report_broken(&self, ip_address: impl Into<IpAddr>) {
+        let ip_address = ip_address.into();
         self.ready_clients.remove(ip_address).await;
         self.broken_endpoints.add_address(ip_address).await;
+    }
+}
+
+/// This is a shallow clone, meaning that the new pool will reference the same
+/// resources as the original pool.
+impl Clone for ChannelPool {
+    fn clone(&self) -> Self {
+        Self {
+            template: self.template.clone(),
+            ready_clients: self.ready_clients.clone(),
+            broken_endpoints: self.broken_endpoints.clone(),
+            _dns_lookup_task: self._dns_lookup_task.clone(),
+            _doctor_task: self._doctor_task.clone(),
+        }
+    }
+}
+
+/// Compare `ChannelPool`s by endpoint templates they were created for.
+///
+/// Remaining private fields are dynamically managed by background tasks and
+/// change to their state do not constitute a "difference" in the pool.
+impl PartialEq for ChannelPool {
+    fn eq(&self, other: &Self) -> bool {
+        self.template == other.template
+    }
+}
+
+impl Eq for ChannelPool {}
+
+/// Hash `ChannelPool` by the endpoint template it was created for.
+impl std::hash::Hash for ChannelPool {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.template.hash(state);
     }
 }

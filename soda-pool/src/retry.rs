@@ -15,11 +15,11 @@ use std::time::Duration;
 pub trait RetryPolicy {
     /// Called to determine the status of the server and whether the request
     /// should be retried or not.
-    fn should_retry(err: &tonic::Status, tries: usize) -> RetryPolicyResult;
+    fn should_retry(err: &tonic::Status, tries: u8) -> RetryPolicyResult;
 }
 
 /// Status of the server.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq, PartialOrd, Ord, Hash)]
 pub enum ServerStatus {
     /// The server should be treated as alive.
     Alive,
@@ -29,7 +29,7 @@ pub enum ServerStatus {
 }
 
 /// Retry time of the failed request.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq, PartialOrd, Ord, Hash)]
 pub enum RetryTime {
     /// Do not retry the request.
     DoNotRetry,
@@ -54,11 +54,11 @@ pub type RetryPolicyResult = (ServerStatus, RetryTime);
 /// client library rather than the server. I also don't have a limit on the
 /// number of retries and will continue as long as there is still an alive
 /// connection remaining.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct DefaultRetryPolicy;
 
 impl RetryPolicy for DefaultRetryPolicy {
-    fn should_retry(err: &tonic::Status, _tries: usize) -> RetryPolicyResult {
+    fn should_retry(err: &tonic::Status, _tries: u8) -> RetryPolicyResult {
         // Initial tests suggest that source of the error is set only when it comes
         // from the client library (e.g. connection refused) and not the server.
         if std::error::Error::source(err).is_some() {

@@ -13,7 +13,7 @@ use url::Url;
 
 struct AlwaysRetry;
 impl soda_pool::RetryPolicy for AlwaysRetry {
-    fn should_retry(_error: &tonic::Status, _tries: usize) -> RetryPolicyResult {
+    fn should_retry(_error: &tonic::Status, _tries: u8) -> RetryPolicyResult {
         (ServerStatus::Dead, RetryTime::Immediately)
     }
 }

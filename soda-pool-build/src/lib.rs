@@ -22,15 +22,21 @@ pub fn configure() -> SodaPoolBuilder {
 }
 
 /// Pooled gRPC clients generator.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct SodaPoolBuilder {
     dir: Option<PathBuf>,
 }
 
 impl SodaPoolBuilder {
+    /// Create a new [`SodaPoolBuilder`].
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// Set the input/output directory of gRPC clients' files.
     #[must_use]
-    pub fn dir(mut self, dir: impl AsRef<Path>) -> Self {
+    pub fn dir(&mut self, dir: impl AsRef<Path>) -> &mut Self {
         self.dir = Some(dir.as_ref().to_path_buf());
         self
     }

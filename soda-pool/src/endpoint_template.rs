@@ -1,6 +1,7 @@
 use core::fmt;
 use http::HeaderValue;
-use std::fmt::Debug;
+use std::error::Error;
+use std::fmt::{Debug, Display};
 use std::{net::IpAddr, str::FromStr, time::Duration};
 #[cfg(feature = "_tls-any")]
 use tonic::transport::ClientTlsConfig;
@@ -12,7 +13,7 @@ use url::Url;
 ///
 /// This structure is used to store all the information necessary to create an [`Endpoint`].
 /// It then creates an [`Endpoint`] to a specific IP address using the [`build`](EndpointTemplate::build) method.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct EndpointTemplate {
     url: Url,
     origin: Option<Uri>,
@@ -38,7 +39,7 @@ pub struct EndpointTemplate {
 }
 
 impl EndpointTemplate {
-    /// Creates a new [`EndpointTemplate`] from the provided URL.
+    /// Creates a new `EndpointTemplate` from the provided URL.
     ///
     /// # Errors
     /// - Will return [`EndpointTemplateError::HostMissing`] if the provided URL does not contain a host.
@@ -387,7 +388,7 @@ impl Debug for EndpointTemplate {
 }
 
 /// Errors that can occur when creating an [`EndpointTemplate`].
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Hash)]
 pub enum EndpointTemplateError {
     /// The URL does not contain a host.
     ///
@@ -427,6 +428,21 @@ impl TryFrom<Url> for EndpointTemplate {
         Self::new(url)
     }
 }
+
+impl Display for EndpointTemplateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EndpointTemplateError::HostMissing => write!(f, "host missing"),
+            EndpointTemplateError::AlreadyIpAddress => write!(f, "already an IP address"),
+            EndpointTemplateError::Inconvertible => write!(f, "inconvertible URL"),
+            EndpointTemplateError::InvalidUserAgent => write!(f, "invalid user agent"),
+            #[cfg(feature = "_tls-any")]
+            EndpointTemplateError::InvalidTlsConfig => write!(f, "invalid TLS config"),
+        }
+    }
+}
+
+impl Error for EndpointTemplateError {}
 
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]

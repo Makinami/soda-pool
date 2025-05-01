@@ -1,14 +1,19 @@
 [package]
 name = "soda-pool-build"
-version = "0.1.0"
-edition.workspace = true
+version = "0.0.1"
+license = "MIT OR Apache-2.0"
+description = "Generator of client code for soda-pool"
+repository = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+keywords = ["grpc", "pool", "client", "codegen", "generator"]
 
 [dependencies]
-syn = { workspace = true, features = ["full", "extra-traits"] }
-tracing = { workspace = true }
+prettyplease = { workspace = true }
 proc-macro2 = { workspace = true }
 quote = { workspace = true }
-prettyplease = { workspace = true }
+syn = { workspace = true, features = ["full", "extra-traits"] }
+tracing = { workspace = true }
 
 [lints]
 workspace = true
