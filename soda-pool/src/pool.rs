@@ -289,6 +289,7 @@ impl ChannelPool {
 /// resources as the original pool.
 impl Clone for ChannelPool {
     fn clone(&self) -> Self {
+        #[allow(clippy::used_underscore_binding)]
         Self {
             template: self.template.clone(),
             ready_clients: self.ready_clients.clone(),

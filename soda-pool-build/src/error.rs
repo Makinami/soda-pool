@@ -12,7 +12,7 @@ pub enum BuilderError {
 
     /// Missing configuration.
     ///
-    /// This error occurs when [`SodaPoolBuilder::build_pools`](crate::SodaPoolBuilder::build_pools) method is called before all required settings are provided.
+    /// This error occurs when [`SodaPoolBuilder::build_clients`](crate::SodaPoolBuilder::build_clients) method is called before all required settings are provided.
     MissingConfiguration(String),
 
     /// I/O error.
@@ -24,6 +24,11 @@ pub enum BuilderError {
     ///
     /// This wraps any error that occurs during parsing Rust code using the `syn` crate.
     SynError(syn::Error),
+
+    /// gRPC client not found.
+    ///
+    /// This error occurs when no gRPC clients are found in the provided file.
+    GrpcClientNotFound,
 }
 
 #[doc(hidden)]
@@ -54,9 +59,10 @@ impl Display for BuilderError {
             BuilderError::UnexpectedStructure => {
                 write!(f, "unexpected structure of basic gRPC client file")
             }
-            BuilderError::MissingConfiguration(key) => write!(f, "missing configuration: {}", key),
-            BuilderError::IoError(err) => write!(f, "I/O error: {}", err),
-            BuilderError::SynError(err) => write!(f, "syn error: {}", err),
+            BuilderError::MissingConfiguration(key) => write!(f, "missing configuration: {key}"),
+            BuilderError::IoError(err) => write!(f, "I/O error: {err}"),
+            BuilderError::SynError(err) => write!(f, "syn error: {err}"),
+            BuilderError::GrpcClientNotFound => write!(f, "gRPC client not found"),
         }
     }
 }

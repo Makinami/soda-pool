@@ -19,6 +19,6 @@ fn main() {
 
     soda_pool_build::configure()
         .dir("./example-protobuf.gen/src")
-        .build_pools(&["health"])
+        .build_all_clients()
         .expect("failed to wrap services");
 }
