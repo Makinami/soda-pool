@@ -58,7 +58,7 @@ impl GrpcClientImpl {
             }
 
             impl #client_pool_ident {
-                pub async fn new(pool: soda_pool::ChannelPool) -> Self {
+                pub fn new(pool: soda_pool::ChannelPool) -> Self {
                     Self { pool }
                 }
 
