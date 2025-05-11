@@ -3,7 +3,7 @@ use http::HeaderValue;
 use std::error::Error;
 use std::fmt::{Debug, Display};
 use std::{net::IpAddr, str::FromStr, time::Duration};
-#[cfg(feature = "_tls-any")]
+#[cfg(feature = "tls")]
 use tonic::transport::ClientTlsConfig;
 use tonic::transport::{Endpoint, Uri};
 use url::Host;
@@ -21,7 +21,7 @@ pub struct EndpointTemplate {
     timeout: Option<Duration>,
     concurrency_limit: Option<usize>,
     rate_limit: Option<(u64, Duration)>,
-    #[cfg(feature = "_tls-any")]
+    #[cfg(feature = "tls")]
     tls_config: Option<ClientTlsConfig>,
     buffer_size: Option<usize>,
     init_stream_window_size: Option<u32>,
@@ -78,7 +78,7 @@ impl EndpointTemplate {
             origin: None,
             user_agent: None,
             timeout: None,
-            #[cfg(feature = "_tls-any")]
+            #[cfg(feature = "tls")]
             tls_config: None,
             concurrency_limit: None,
             rate_limit: None,
@@ -120,7 +120,7 @@ impl EndpointTemplate {
             endpoint = endpoint.timeout(timeout);
         }
 
-        #[cfg(feature = "_tls-any")]
+        #[cfg(feature = "tls")]
         if let Some(tls_config) = self.tls_config.clone() {
             endpoint = endpoint
                 .tls_config(tls_config)
@@ -301,7 +301,7 @@ impl EndpointTemplate {
     /// # Errors
     ///
     /// Will return [`EndpointTemplateError::InvalidTlsConfig`] if the provided config cannot be passed to an [`Endpoint`] and would cause a failure when building an endpoint.
-    #[cfg(feature = "_tls-any")]
+    #[cfg(feature = "tls")]
     pub fn tls_config(self, tls_config: ClientTlsConfig) -> Result<Self, EndpointTemplateError> {
         // Make sure we'll be able to build the Endpoint using this ClientTlsConfig
         let endpoint = self.build(std::net::Ipv4Addr::new(127, 0, 0, 1));
@@ -417,7 +417,7 @@ pub enum EndpointTemplateError {
     /// The provided TLS config is invalid.
     ///
     /// Provided TLS config would cause a failure when building an endpoint.
-    #[cfg(feature = "_tls-any")]
+    #[cfg(feature = "tls")]
     InvalidTlsConfig,
 }
 
@@ -436,7 +436,7 @@ impl Display for EndpointTemplateError {
             EndpointTemplateError::AlreadyIpAddress => write!(f, "already an IP address"),
             EndpointTemplateError::Inconvertible => write!(f, "inconvertible URL"),
             EndpointTemplateError::InvalidUserAgent => write!(f, "invalid user agent"),
-            #[cfg(feature = "_tls-any")]
+            #[cfg(feature = "tls")]
             EndpointTemplateError::InvalidTlsConfig => write!(f, "invalid TLS config"),
         }
     }

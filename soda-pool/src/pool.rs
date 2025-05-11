@@ -106,7 +106,8 @@ async fn check_dns(
 ) {
     // Resolve domain to IP addresses.
     let Ok(addresses) = resolve_domain(endpoint_template.domain()) else {
-        todo!("This should never happen");
+        // todo-correctness: Handle the case where the domain cannot be resolved!
+        return;
     };
 
     let mut ready = Vec::new();

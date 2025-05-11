@@ -1,16 +1,16 @@
 use std::{io::Result, net::IpAddr};
 
-#[cfg(not(any(test, feature = "mock-dns")))]
+#[cfg(not(any(test, feature = "_mock-dns")))]
 pub use std::net::ToSocketAddrs;
 
-#[cfg(any(test, feature = "mock-dns"))]
+#[cfg(any(test, feature = "_mock-dns"))]
 pub use mock_net::ToSocketAddrs;
 
 pub fn resolve_domain(domain: &str) -> Result<impl Iterator<Item = IpAddr>> {
     Ok((domain, 0).to_socket_addrs()?.map(|addr| addr.ip()))
 }
 
-#[cfg(any(test, feature = "mock-dns"))]
+#[cfg(any(test, feature = "_mock-dns"))]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub mod mock_net {
     use std::{io, net::SocketAddr, vec};
