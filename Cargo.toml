@@ -4,11 +4,12 @@ members = [
     "soda-pool",
     "soda-pool-build",
 
-    "example-client",
-    "example-protobuf.gen",
-    "example-server",
+    "example/client",
+    "example/protobuf.gen",
+    "example/server",
+    "example/generator",
+
     "perf-benchmark",
-    "tonic-generator",
 ]
 
 package.repository = "https://github.com/Makinami/soda-pool"

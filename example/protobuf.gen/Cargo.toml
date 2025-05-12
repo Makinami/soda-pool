@@ -8,4 +8,4 @@ publish = false
 prost = { workspace = true }
 tonic = { workspace = true }
 
-soda-pool = { path = "../soda-pool" }
+soda-pool = { path = "../../soda-pool" }

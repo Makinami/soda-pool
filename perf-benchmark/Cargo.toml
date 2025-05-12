@@ -9,7 +9,7 @@ publish = false
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }
 tokio = { workspace = true, features = ["full"] }
-example-protobuf = { path = "../example-protobuf.gen" }
+example-protobuf = { path = "../example/protobuf.gen" }
 url = { workspace = true }
 soda-pool = { path = "../soda-pool" }
 tonic = { workspace = true }

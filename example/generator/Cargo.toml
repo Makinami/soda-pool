@@ -1,5 +1,5 @@
 [package]
-name = "tonic-generator"
+name = "example-generator"
 version = "0.1.0"
 edition = { workspace = true }
 publish = false
@@ -7,6 +7,6 @@ publish = false
 [dependencies]
 prost-build = { workspace = true }
 tonic-build = { workspace = true }
-soda-pool-build = { path = "../soda-pool-build" }
+soda-pool-build = { path = "../../soda-pool-build" }
 
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }

@@ -10,4 +10,4 @@ tokio = { workspace = true, features = ["full"] }
 tonic = { workspace = true }
 tracing-subscriber = { workspace = true }
 
-example-protobuf = { path = "../example-protobuf.gen" }
+example-protobuf = { path = "../protobuf.gen" }

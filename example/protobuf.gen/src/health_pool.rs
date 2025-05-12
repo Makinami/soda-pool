@@ -8,7 +8,7 @@ pub mod health_client {
         pool: soda_pool::ChannelPool,
     }
     impl HealthClientPool {
-        pub async fn new(pool: soda_pool::ChannelPool) -> Self {
+        pub fn new(pool: soda_pool::ChannelPool) -> Self {
             Self { pool }
         }
         pub fn new_from_endpoint(endpoint: soda_pool::EndpointTemplate) -> Self {
@@ -87,7 +87,7 @@ pub mod echo_client {
         pool: soda_pool::ChannelPool,
     }
     impl EchoClientPool {
-        pub async fn new(pool: soda_pool::ChannelPool) -> Self {
+        pub fn new(pool: soda_pool::ChannelPool) -> Self {
             Self { pool }
         }
         pub fn new_from_endpoint(endpoint: soda_pool::EndpointTemplate) -> Self {

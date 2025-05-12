@@ -375,6 +375,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "example-generator"
+version = "0.1.0"
+dependencies = [
+ "prost-build",
+ "soda-pool-build",
+ "tonic-build",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "example-protobuf"
 version = "0.1.0"
 dependencies = [
@@ -1877,16 +1887,6 @@ dependencies = [
  "prost-types",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "tonic-generator"
-version = "0.1.0"
-dependencies = [
- "prost-build",
- "soda-pool-build",
- "tonic-build",
- "tracing-subscriber",
 ]
 
 [[package]]
