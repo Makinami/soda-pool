@@ -26,6 +26,7 @@ pub struct ChannelPoolBuilder {
 
 impl ChannelPoolBuilder {
     /// Create a new `ChannelPoolBuilder` from the given endpoint template.
+    #[must_use]
     pub fn new(endpoint: impl Into<EndpointTemplate>) -> Self {
         Self {
             endpoint: endpoint.into(),
@@ -49,6 +50,7 @@ impl ChannelPoolBuilder {
     /// This function will create a new channel pool from the given endpoint
     /// template and settings. This includes starting channel pool's background
     /// tasks.
+    #[must_use]
     pub fn build(self) -> ChannelPool {
         let ready_clients = Arc::new(ReadyChannels::default());
         let broken_endpoints = Arc::new(BrokenEndpoints::default());
@@ -106,7 +108,10 @@ async fn check_dns(
 ) {
     // Resolve domain to IP addresses.
     let Ok(addresses) = resolve_domain(endpoint_template.domain()) else {
-        // todo-correctness: Handle the case where the domain cannot be resolved!
+        // todo-interface: DNS resolution would mainly fail if domain does not
+        // resolve to any IP address, but it could also fail for other reasons.
+        // In the future version, we should record this error and allow user to
+        // see it.
         return;
     };
 
@@ -177,7 +182,7 @@ impl Drop for AbortOnDrop {
 }
 
 /// Self-managed pool of tonic's [`Channel`]s.
-// todo-performance: Need to change to INNER pattern to avoid cloning multiple Arcs.
+// todo-performance: Probably better to change to INNER pattern to avoid cloning multiple Arcs.
 #[derive(Debug)]
 pub struct ChannelPool {
     template: Arc<EndpointTemplate>,

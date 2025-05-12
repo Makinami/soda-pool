@@ -53,6 +53,7 @@ impl BuilderError {
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 impl Display for BuilderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -67,12 +68,13 @@ impl Display for BuilderError {
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 impl Error for BuilderError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             BuilderError::IoError(err) => Some(err),
             BuilderError::SynError(err) => Some(err),
-            _ => None,
+            BuilderError::GrpcClientNotFound | BuilderError::MissingConfiguration(_) | BuilderError::UnexpectedStructure => None,
         }
     }
 }

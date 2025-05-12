@@ -140,7 +140,6 @@ impl GrpcClientMethod {
                                 }
                                 soda_pool::RetryTime::After(duration) => {
                                     // Wait for the specified duration before retrying.
-                                    // todo-interface: Don't require client to have tokio dependency.
                                     soda_pool::deps::sleep(duration).await;
                                 }
                             }

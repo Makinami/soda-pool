@@ -429,6 +429,7 @@ impl TryFrom<Url> for EndpointTemplate {
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 impl Display for EndpointTemplateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

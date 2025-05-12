@@ -147,9 +147,14 @@ fn calculate_backoff(failed_times: u8) -> Duration {
 
 fn set_retires(timestamp: DateTime<Utc>, failed_times: u8) -> DateTime<Utc> {
     let failed_times = min(failed_times, 0xFF);
-    // The last byte of the nanoseconds field is used to store the number of failed times.
-    // To make sure we do not go above the maximum nanoseconds value (2_000_000_000), we subtract 0x100.
-    let nanos = (timestamp.nanosecond() & 0xFFFF_FF00 | u32::from(failed_times)) - 0x100;
+    // The last byte of the nanoseconds field is used to store the number of
+    // failed times.
+    //
+    // note: The maximum valid value for nanoseconds is 1_999_999_999 witch is
+    // 0x7735_93FF in hex. Since the last byte is already saturated, we can
+    // overwrite it with the number of failed times without ever going out of
+    // bounds.
+    let nanos = timestamp.nanosecond() & 0xFFFF_FF00 | u32::from(failed_times);
     timestamp
         .with_nanosecond(nanos)
         .expect("couldn't failed to set nanos")
@@ -166,9 +171,8 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
     #[rstest::rstest]
-    async fn retries(#[values(0, 1, 2, 4, 16, 255)] i: u8) {
+    fn retries(#[values(0, 1, 2, 4, 16, 255)] i: u8) {
         let datetime = Utc::now();
         let actual = set_retires(datetime, i);
         let time_diff = (actual - datetime).abs();
@@ -208,6 +212,7 @@ mod tests {
         let time_diff = (backoff_tracker.next_test_time() - start).abs();
 
         assert_eq!(backoff_tracker.failed_times(), fail_count);
+        // todo: Flaky test
         assert!((time_diff - expected_delay).abs() < TimeDelta::microseconds(10));
     }
 
