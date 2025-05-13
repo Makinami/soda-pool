@@ -3,10 +3,13 @@ name = "soda-pool-build"
 version = "0.0.1"
 license = "MIT OR Apache-2.0"
 description = "Generator of client code for soda-pool"
+homepage = "https://github.com/Makinami/soda-pool"
+documentation = "https://docs.rs/soda-pool-build/0.0.1"
 repository = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }
 keywords = ["grpc", "pool", "client", "codegen", "generator"]
+categories = ["network-programming", "web-programming", "asynchronous"]
 
 [dependencies]
 prettyplease = { workspace = true }

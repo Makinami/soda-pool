@@ -28,7 +28,6 @@ All of the documentation and examples assume prior familiarity with [tonic](http
 
 While soda-pool channel pool can be used directly, it is not designed to be done so, so no examples are given beyond the [crate's documentation](https://docs.rs/soda-pool).
 
-
 ## Rust Version
 
 At this experimental stage, crates are developed against the latest stable Rust version. I plan on lowering MSRV as far as reasonable soon.

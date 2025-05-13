@@ -7,3 +7,4 @@
 - support single channel version for testing
 - return a single struct wrapping channel and providing access to IP address from get_channel
 - support for other server endpoints updates beside DNS records
+- support multiple versions of tonic through features
