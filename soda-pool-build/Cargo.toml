@@ -6,6 +6,7 @@ description = "Generator of client code for soda-pool"
 homepage = "https://github.com/Makinami/soda-pool"
 documentation = "https://docs.rs/soda-pool-build/0.0.1"
 repository = { workspace = true }
+readme = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }
 keywords = ["grpc", "pool", "client", "codegen", "generator"]
