@@ -112,7 +112,7 @@ impl BrokenEndpoints {
         }
     }
 
-    pub(crate) async fn addresses(&self) -> impl Deref<Target = BinaryHeap<DelayedAddress>> + Send {
+    pub(crate) async fn addresses(&self) -> impl Deref<Target = BinaryHeap<DelayedAddress>> + Send + '_ {
         self.addresses.lock().await
     }
 }
