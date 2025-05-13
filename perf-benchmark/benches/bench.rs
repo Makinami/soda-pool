@@ -1,12 +1,12 @@
 use std::{str::FromStr, sync::atomic::AtomicBool};
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use example_protobuf::{WrappedClient, health_client::HealthClient};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use example_protobuf::{health_client::HealthClient, WrappedClient};
 use futures::future::try_join_all;
 use soda_pool::EndpointTemplate;
 use std::sync::atomic::Ordering::Relaxed;
 use tokio::runtime::Runtime;
-use tonic::{IntoRequest, Status, transport::Endpoint};
+use tonic::{transport::Endpoint, IntoRequest, Status};
 use url::Url;
 
 pub fn grpc_client(c: &mut Criterion) {

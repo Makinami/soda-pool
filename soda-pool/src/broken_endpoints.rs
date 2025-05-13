@@ -112,7 +112,9 @@ impl BrokenEndpoints {
         }
     }
 
-    pub(crate) async fn addresses(&self) -> impl Deref<Target = BinaryHeap<DelayedAddress>> + Send + '_ {
+    pub(crate) async fn addresses(
+        &self,
+    ) -> impl Deref<Target = BinaryHeap<DelayedAddress>> + Send + '_ {
         self.addresses.lock().await
     }
 }
@@ -272,12 +274,10 @@ mod tests {
             assert_eq!(actual.failed_times(), 1);
             assert_eq!(*actual, IpAddr::from(Ipv4Addr::LOCALHOST));
 
-            assert!(
-                broken_endpoints
-                    .get_address([127, 0, 0, 2].into())
-                    .await
-                    .is_none()
-            );
+            assert!(broken_endpoints
+                .get_address([127, 0, 0, 2].into())
+                .await
+                .is_none());
         }
 
         #[tokio::test]
@@ -313,11 +313,9 @@ mod tests {
             let guard = broken_endpoints.addresses().await;
             let addresses = guard.iter().collect::<Vec<_>>();
 
-            assert!(
-                addresses
-                    .iter()
-                    .all(|address| { address.failed_times() == 1 })
-            );
+            assert!(addresses
+                .iter()
+                .all(|address| { address.failed_times() == 1 }));
 
             let mut actual = addresses.into_iter().map(Deref::deref).collect::<Vec<_>>();
             actual.sort();

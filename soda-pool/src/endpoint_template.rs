@@ -447,6 +447,7 @@ impl TryFrom<Url> for EndpointTemplate {
 impl Display for EndpointTemplateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            EndpointTemplateError::NotAUrl => write!(f, "not a valid URL"),
             EndpointTemplateError::HostMissing => write!(f, "host missing"),
             EndpointTemplateError::AlreadyIpAddress => write!(f, "already an IP address"),
             EndpointTemplateError::Inconvertible => write!(f, "inconvertible URL"),

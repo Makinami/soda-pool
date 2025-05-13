@@ -74,7 +74,9 @@ impl Error for BuilderError {
         match self {
             BuilderError::IoError(err) => Some(err),
             BuilderError::SynError(err) => Some(err),
-            BuilderError::GrpcClientNotFound | BuilderError::MissingConfiguration(_) | BuilderError::UnexpectedStructure => None,
+            BuilderError::GrpcClientNotFound
+            | BuilderError::MissingConfiguration(_)
+            | BuilderError::UnexpectedStructure => None,
         }
     }
 }

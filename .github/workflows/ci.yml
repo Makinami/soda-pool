@@ -97,7 +97,7 @@ jobs:
       - uses: hecrj/setup-rust-action@v2
       - uses: taiki-e/install-action@protoc
       - uses: Swatinem/rust-cache@v2
-      - run: cargo run --bin tonic-generator
+      - run: cargo run --bin example-generator
       - run: git diff --exit-code
 
   udeps:

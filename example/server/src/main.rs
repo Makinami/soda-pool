@@ -13,7 +13,7 @@ use example_protobuf::{
     echo_server::{Echo, EchoServer},
     health_server::{Health, HealthServer},
 };
-use rand::{Rng, random_range};
+use rand::{random_range, Rng};
 use tokio::time::sleep;
 
 const PORT: u16 = 50001;

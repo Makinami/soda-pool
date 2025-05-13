@@ -1,7 +1,7 @@
 use std::{collections::BinaryHeap, net::IpAddr, sync::Arc, time::Duration};
 
 use chrono::{DateTime, TimeDelta, Utc};
-use futures::{FutureExt, StreamExt, stream::FuturesUnordered};
+use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
 use tokio::{
     sync::RwLock,
     task::{AbortHandle, JoinHandle},
