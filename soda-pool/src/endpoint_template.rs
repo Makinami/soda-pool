@@ -42,11 +42,16 @@ impl EndpointTemplate {
     /// Creates a new `EndpointTemplate` from the provided URL.
     ///
     /// # Errors
+    /// - Will return [`EndpointTemplateError::NotAUrl`] if the provided URL is not a valid URL.
     /// - Will return [`EndpointTemplateError::HostMissing`] if the provided URL does not contain a host.
     /// - Will return [`EndpointTemplateError::AlreadyIpAddress`] if the provided URL already contains an IP address.
     /// - Will return [`EndpointTemplateError::Inconvertible`] if the provided URL cannot be converted to the tonic's internal representation.
-    pub fn new(url: impl Into<Url>) -> Result<Self, EndpointTemplateError> {
-        let url: Url = url.into();
+    // Url requires a full Unicode support which, although correct, seems like
+    // an overkill for just substituting hostname with an IP address. Accepts
+    // any type that has a conversion to Url instead of just Url to limit
+    // breaking changes in the future if decide to use another type.
+    pub fn new(url: impl TryInto<Url>) -> Result<Self, EndpointTemplateError> {
+        let url: Url = url.try_into().map_err(|_| EndpointTemplateError::NotAUrl)?;
 
         // Check if URL contains hostname that can be resolved with DNS
         match url.host() {
@@ -201,7 +206,9 @@ impl EndpointTemplate {
     ///
     /// # Errors
     ///
-    /// Will return [`EndpointTemplateError::InvalidUserAgent`] if the provided value cannot be converted to a [`HeaderValue`] and would cause a failure when building an endpoint.
+    /// Will return [`EndpointTemplateError::InvalidUserAgent`] if the provided
+    /// value cannot be converted to a [`HeaderValue`] and would cause a failure
+    /// when building an endpoint.
     pub fn user_agent(
         self,
         user_agent: impl TryInto<HeaderValue>,
@@ -300,7 +307,9 @@ impl EndpointTemplate {
     ///
     /// # Errors
     ///
-    /// Will return [`EndpointTemplateError::InvalidTlsConfig`] if the provided config cannot be passed to an [`Endpoint`] and would cause a failure when building an endpoint.
+    /// Will return [`EndpointTemplateError::InvalidTlsConfig`] if the provided
+    /// config cannot be passed to an [`Endpoint`] and would cause a failure
+    /// when building an endpoint.
     #[cfg(feature = "tls")]
     pub fn tls_config(self, tls_config: ClientTlsConfig) -> Result<Self, EndpointTemplateError> {
         // Make sure we'll be able to build the Endpoint using this ClientTlsConfig
@@ -390,6 +399,11 @@ impl Debug for EndpointTemplate {
 /// Errors that can occur when creating an [`EndpointTemplate`].
 #[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Hash)]
 pub enum EndpointTemplateError {
+    /// Provided value is not a valid URL.
+    ///
+    /// Provided value could not be parsed as a URL.
+    NotAUrl,
+
     /// The URL does not contain a host.
     ///
     /// Provided URL does not contain a host that can be resolved with DNS.
