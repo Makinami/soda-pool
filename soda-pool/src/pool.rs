@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// Builder for creating a [`ChannelPool`].
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct ChannelPoolBuilder {
     endpoint: EndpointTemplate,
     dns_interval: Duration,
@@ -303,24 +303,5 @@ impl Clone for ChannelPool {
             _dns_lookup_task: self._dns_lookup_task.clone(),
             _doctor_task: self._doctor_task.clone(),
         }
-    }
-}
-
-/// Compare `ChannelPool`s by endpoint templates they were created for.
-///
-/// Remaining private fields are dynamically managed by background tasks and
-/// change to their state do not constitute a "difference" in the pool.
-impl PartialEq for ChannelPool {
-    fn eq(&self, other: &Self) -> bool {
-        self.template == other.template
-    }
-}
-
-impl Eq for ChannelPool {}
-
-/// Hash `ChannelPool` by the endpoint template it was created for.
-impl std::hash::Hash for ChannelPool {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.template.hash(state);
     }
 }

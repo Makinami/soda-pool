@@ -13,7 +13,7 @@ use url::Url;
 ///
 /// This structure is used to store all the information necessary to create an [`Endpoint`].
 /// It then creates an [`Endpoint`] to a specific IP address using the [`build`](EndpointTemplate::build) method.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone)]
 pub struct EndpointTemplate {
     url: Url,
     origin: Option<Uri>,
