@@ -59,7 +59,6 @@ impl SodaPoolBuilder {
     }
 
     /// Set the input/output directory of gRPC clients' files.
-    #[must_use]
     pub fn dir(&mut self, dir: impl AsRef<Path>) -> &mut Self {
         self.dir = Some(dir.as_ref().to_path_buf());
         self

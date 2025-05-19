@@ -8,3 +8,4 @@
 - return a single struct wrapping channel and providing access to IP address from get_channel
 - support for other server endpoints updates beside DNS records
 - support multiple versions of tonic through features
+- get endpoint information (e.g. url) from ChannelPool
