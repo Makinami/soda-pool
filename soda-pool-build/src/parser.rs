@@ -1,6 +1,5 @@
 use std::{fs, io, path::PathBuf};
 
-use proc_macro2::Span;
 use syn::{
     FnArg, Ident, ImplItem, ImplItemFn, Item, ItemImpl, ItemMod, PatType, PathSegment, ReturnType,
     Type, TypeImplTrait,
@@ -16,18 +15,16 @@ pub(crate) fn parse_grpc_client_file(client_file: &PathBuf) -> BuilderResult<Grp
     if !(client_file.exists() && client_file.is_file()) {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
-            format!("File not found: {client_file:?}",),
+            format!("File not found: {}", client_file.display()),
         )
         .into());
     }
 
-    let file_module = Ident::new(
-        client_file
+    let name = client_file
             .file_stem()
             .and_then(|stem| stem.to_str())
-            .expect("input must be a file"),
-        Span::call_site(),
-    );
+            .expect("input must be a file");
+    let file_module = syn::parse_str::<Ident>(name)?;
 
     let raw_contents = fs::read_to_string(client_file)?;
     let syn_parsed_contents = syn::parse_file(&raw_contents)?;
@@ -255,6 +252,7 @@ fn get_into_request_type(request_type: &Type) -> BuilderResult<&Type> {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
+    use proc_macro2::Span;
     use syn::File;
 
     use super::*;
