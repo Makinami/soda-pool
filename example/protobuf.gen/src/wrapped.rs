@@ -1,4 +1,4 @@
-use soda_pool::{define_client, define_method};
+use soda_pool::{define_client, define_method, ChannelPool};
 
 use super::health::health_client::HealthClient;
 

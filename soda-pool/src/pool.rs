@@ -7,7 +7,7 @@ use tokio::{
     task::{AbortHandle, JoinHandle},
     time::interval,
 };
-use tonic::transport::Channel;
+use tonic::{async_trait, transport::Channel};
 use tracing::{debug, trace};
 
 use crate::{
@@ -19,12 +19,12 @@ use crate::{
 
 /// Builder for creating a [`ChannelPool`].
 #[derive(Debug, Clone)]
-pub struct ChannelPoolBuilder {
+pub struct ManagedChannelPoolBuilder {
     endpoint: EndpointTemplate,
     dns_interval: Duration,
 }
 
-impl ChannelPoolBuilder {
+impl ManagedChannelPoolBuilder {
     /// Create a new `ChannelPoolBuilder` from the given endpoint template.
     #[must_use]
     pub fn new(endpoint: impl Into<EndpointTemplate>) -> Self {
@@ -51,7 +51,7 @@ impl ChannelPoolBuilder {
     /// template and settings. This includes starting channel pool's background
     /// tasks.
     #[must_use]
-    pub fn build(self) -> ChannelPool {
+    pub fn build(self) -> ManagedChannelPool {
         let ready_clients = Arc::new(ReadyChannels::default());
         let broken_endpoints = Arc::new(BrokenEndpoints::default());
 
@@ -91,7 +91,7 @@ impl ChannelPoolBuilder {
             })
         };
 
-        ChannelPool {
+        ManagedChannelPool {
             template: Arc::new(self.endpoint),
             ready_clients,
             broken_endpoints,
@@ -181,10 +181,23 @@ impl Drop for AbortOnDrop {
     }
 }
 
+#[async_trait]
+pub trait ChannelPool {
+    /// Get a channel from the pool.
+    ///
+    /// Returns a channel if one is available, or `None` if no channels are available.
+    async fn get_channel(&self) -> Option<(IpAddr, Channel)>;
+
+    /// Report a broken endpoint to the pool.
+    ///
+    /// Removes the endpoint from the pool and add it to the list of currently dead servers.
+    async fn report_broken(&self, ip_address: IpAddr);
+}
+
 /// Self-managed pool of tonic's [`Channel`]s.
 // todo-performance: Probably better to change to INNER pattern to avoid cloning multiple Arcs.
 #[derive(Debug)]
-pub struct ChannelPool {
+pub struct ManagedChannelPool {
     template: Arc<EndpointTemplate>,
     ready_clients: Arc<ReadyChannels>,
     broken_endpoints: Arc<BrokenEndpoints>,
@@ -193,7 +206,8 @@ pub struct ChannelPool {
     _doctor_task: Arc<AbortOnDrop>,
 }
 
-impl ChannelPool {
+#[async_trait]
+impl ChannelPool for ManagedChannelPool {
     /// Get a channel from the pool.
     ///
     /// This function will return a channel if one is available, or `None` if no
@@ -217,7 +231,7 @@ impl ChannelPool {
     /// the function will return `None` immediately.
     ///
     /// The specifics of this behavior are not set in stone and may change in the future.
-    pub async fn get_channel(&self) -> Option<(IpAddr, Channel)> {
+    async fn get_channel(&self) -> Option<(IpAddr, Channel)> {
         static RECHECK_BROKEN_ENDPOINTS: RwLock<DateTime<Utc>> =
             RwLock::const_new(DateTime::<Utc>::MIN_UTC);
         const MIN_INTERVAL: TimeDelta = TimeDelta::milliseconds(500);
@@ -284,8 +298,7 @@ impl ChannelPool {
     /// Report a broken endpoint to the pool.
     ///
     /// This function will remove the endpoint from the pool and add it to the list of currently dead servers.
-    pub async fn report_broken(&self, ip_address: impl Into<IpAddr>) {
-        let ip_address = ip_address.into();
+    async fn report_broken(&self, ip_address: IpAddr) {
         self.ready_clients.remove(ip_address).await;
         self.broken_endpoints.add_address(ip_address).await;
     }
@@ -293,7 +306,7 @@ impl ChannelPool {
 
 /// This is a shallow clone, meaning that the new pool will reference the same
 /// resources as the original pool.
-impl Clone for ChannelPool {
+impl Clone for ManagedChannelPool {
     fn clone(&self) -> Self {
         #[allow(clippy::used_underscore_binding)]
         Self {

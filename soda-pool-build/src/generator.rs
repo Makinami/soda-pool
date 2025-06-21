@@ -54,24 +54,18 @@ impl GrpcClientImpl {
         quote! {
             #[derive(Clone)]
             pub struct #client_pool_ident {
-                pool: soda_pool::ChannelPool,
+                pool: std::sync::Arc<dyn soda_pool::ChannelPool + Send + Sync>,
             }
 
             impl #client_pool_ident {
-                pub fn new(pool: soda_pool::ChannelPool) -> Self {
-                    Self { pool }
+                pub fn new(pool: impl soda_pool::ChannelPool + Send + Sync + 'static) -> Self {
+                    Self { pool: std::sync::Arc::new(pool) }
                 }
 
                 pub fn new_from_endpoint(endpoint: soda_pool::EndpointTemplate) -> Self {
                     Self {
-                        pool: soda_pool::ChannelPoolBuilder::new(endpoint).build(),
+                        pool: std::sync::Arc::new(soda_pool::ChannelPoolBuilder::new(endpoint).build()),
                     }
-                }
-            }
-
-            impl From<soda_pool::ChannelPool> for #client_pool_ident {
-                fn from(pool: soda_pool::ChannelPool) -> Self {
-                    Self { pool }
                 }
             }
 

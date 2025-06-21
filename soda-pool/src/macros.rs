@@ -4,19 +4,19 @@ macro_rules! define_client {
     ($client_type:ident) => {
         #[derive(Clone)]
         pub struct $client_type {
-            pool: $crate::ChannelPool,
+            pool: $crate::ManagedChannelPool,
         }
 
         impl $client_type {
             pub fn new(endpoint: $crate::EndpointTemplate) -> Self {
                 Self {
-                    pool: $crate::ChannelPoolBuilder::new(endpoint).build(),
+                    pool: $crate::ManagedChannelPoolBuilder::new(endpoint).build(),
                 }
             }
         }
 
-        impl From<$crate::ChannelPool> for $client_type {
-            fn from(pool: $crate::ChannelPool) -> Self {
+        impl From<$crate::ManagedChannelPool> for $client_type {
+            fn from(pool: $crate::ManagedChannelPool) -> Self {
                 Self { pool }
             }
         }
