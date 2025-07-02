@@ -64,7 +64,7 @@ impl GrpcClientImpl {
 
                 pub fn new_from_endpoint(endpoint: soda_pool::EndpointTemplate) -> Self {
                     Self {
-                        pool: std::sync::Arc::new(soda_pool::ChannelPoolBuilder::new(endpoint).build()),
+                        pool: std::sync::Arc::new(soda_pool::ManagedChannelPoolBuilder::new(endpoint).build()),
                     }
                 }
             }

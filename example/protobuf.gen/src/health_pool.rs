@@ -5,21 +5,20 @@ pub mod health_client {
     use super::super::health::health_client::*;
     #[derive(Clone)]
     pub struct HealthClientPool {
-        pool: soda_pool::ChannelPool,
+        pool: std::sync::Arc<dyn soda_pool::ChannelPool + Send + Sync>,
     }
     impl HealthClientPool {
-        pub fn new(pool: soda_pool::ChannelPool) -> Self {
-            Self { pool }
+        pub fn new(pool: impl soda_pool::ChannelPool + Send + Sync + 'static) -> Self {
+            Self {
+                pool: std::sync::Arc::new(pool),
+            }
         }
         pub fn new_from_endpoint(endpoint: soda_pool::EndpointTemplate) -> Self {
             Self {
-                pool: soda_pool::ChannelPoolBuilder::new(endpoint).build(),
+                pool: std::sync::Arc::new(
+                    soda_pool::ManagedChannelPoolBuilder::new(endpoint).build(),
+                ),
             }
-        }
-    }
-    impl From<soda_pool::ChannelPool> for HealthClientPool {
-        fn from(pool: soda_pool::ChannelPool) -> Self {
-            Self { pool }
         }
     }
     impl HealthClientPool {
@@ -84,21 +83,20 @@ pub mod echo_client {
     use super::super::health::echo_client::*;
     #[derive(Clone)]
     pub struct EchoClientPool {
-        pool: soda_pool::ChannelPool,
+        pool: std::sync::Arc<dyn soda_pool::ChannelPool + Send + Sync>,
     }
     impl EchoClientPool {
-        pub fn new(pool: soda_pool::ChannelPool) -> Self {
-            Self { pool }
+        pub fn new(pool: impl soda_pool::ChannelPool + Send + Sync + 'static) -> Self {
+            Self {
+                pool: std::sync::Arc::new(pool),
+            }
         }
         pub fn new_from_endpoint(endpoint: soda_pool::EndpointTemplate) -> Self {
             Self {
-                pool: soda_pool::ChannelPoolBuilder::new(endpoint).build(),
+                pool: std::sync::Arc::new(
+                    soda_pool::ManagedChannelPoolBuilder::new(endpoint).build(),
+                ),
             }
-        }
-    }
-    impl From<soda_pool::ChannelPool> for EchoClientPool {
-        fn from(pool: soda_pool::ChannelPool) -> Self {
-            Self { pool }
         }
     }
     impl EchoClientPool {
