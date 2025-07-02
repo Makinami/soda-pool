@@ -1,10 +1,10 @@
 [package]
 name = "soda-pool"
-version = "0.0.1"
+version = "0.0.2"
 license = "MIT OR Apache-2.0"
 description = "Connection pool for tonic's gRPC channels"
 homepage = "https://github.com/Makinami/soda-pool"
-documentation = "https://docs.rs/soda-pool/0.0.1"
+documentation = "https://docs.rs/soda-pool/0.0.2"
 repository = { workspace = true }
 readme = { workspace = true }
 edition = { workspace = true }

@@ -1632,7 +1632,7 @@ dependencies = [
 
 [[package]]
 name = "soda-pool"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1652,7 +1652,7 @@ dependencies = [
 
 [[package]]
 name = "soda-pool-build"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "prettyplease",
  "proc-macro2",
