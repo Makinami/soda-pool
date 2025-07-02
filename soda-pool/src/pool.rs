@@ -1,5 +1,6 @@
 use std::{collections::BinaryHeap, net::IpAddr, sync::Arc, time::Duration};
 
+use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
 use tokio::{
@@ -7,7 +8,7 @@ use tokio::{
     task::{AbortHandle, JoinHandle},
     time::interval,
 };
-use tonic::{async_trait, transport::Channel};
+use tonic::transport::Channel;
 use tracing::{debug, trace};
 
 use crate::{
@@ -181,6 +182,10 @@ impl Drop for AbortOnDrop {
     }
 }
 
+/// Trait implemented by channel pools.
+///
+/// Note: The trait definition is using [`mod@async_trait`] so it is possible
+/// (or even suggested) for implementations to do the same.
 #[async_trait]
 pub trait ChannelPool {
     /// Get a channel from the pool.

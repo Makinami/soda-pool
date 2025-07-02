@@ -1634,6 +1634,7 @@ dependencies = [
 name = "soda-pool"
 version = "0.0.1"
 dependencies = [
+ "async-trait",
  "chrono",
  "futures",
  "http",

@@ -66,6 +66,8 @@
 //! # Feature flags
 //!
 //! - `tls`: Enables TLS options for the [`EndpointTemplate`].
+//! - `mock`: Enables the mock implementation of the [`ChannelPool`] trait for
+//!   testing purposes.
 //!
 //! # Implementation details
 //!
@@ -74,8 +76,8 @@
 //!    new channels.
 //!
 //!    Frequency of this check can be configured using
-//!    [`ChannelPoolBuilder::dns_check_interval`](crate::ChannelPoolBuilder::dns_interval)
-//!    method. The default is 5 seconds.
+//!    [`ManagedChannelPoolBuilder::dns_interval`] method. The default is 5
+//!    seconds.
 //!
 //! 2. A task that periodically checks connections previously marked as broken
 //!    and tries to reconnect them.
@@ -106,4 +108,5 @@ pub mod deps;
 mod macros;
 mod ready_channels;
 
+#[cfg(feature = "mock")]
 pub mod mock;
