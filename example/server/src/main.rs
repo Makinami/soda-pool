@@ -104,7 +104,7 @@ async fn main() {
                 stop_server!(address);
             }
             "list" => {
-                println!("Reliability: {}", reliability);
+                println!("Reliability: {reliability}");
                 println!("Average wait: {} ms", avg_wait.as_millis());
                 for (address, task) in tasks.iter() {
                     println!(
@@ -140,8 +140,7 @@ async fn main() {
                     if let Ok(value) = cmd.split_once(' ').unwrap().1.parse() {
                         reliability = value;
                         println!(
-                            "Reliability set to {}. Restarting servers (if there are any)...",
-                            reliability
+                            "Reliability set to {reliability}. Restarting servers (if there are any)..."
                         );
                         restart_servers!();
                     } else {
@@ -159,7 +158,7 @@ async fn main() {
                         println!("Invalid average wait value");
                     }
                 } else {
-                    println!("Unknown command: {}", cmd);
+                    println!("Unknown command: {cmd}");
                 }
             }
         }
