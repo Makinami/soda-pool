@@ -81,9 +81,7 @@ mod tests {
     #[test]
     #[serial]
     fn forwards_errors() {
-        mock_net::set_socket_addrs(Box::new(|_, _| {
-            Err(io::Error::other("mock error"))
-        }));
+        mock_net::set_socket_addrs(Box::new(|_, _| Err(io::Error::other("mock error"))));
 
         let result = resolve_domain("localhost");
         assert!(result.is_err());

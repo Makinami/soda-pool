@@ -21,9 +21,9 @@ pub(crate) fn parse_grpc_client_file(client_file: &PathBuf) -> BuilderResult<Grp
     }
 
     let name = client_file
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .expect("input must be a file");
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .expect("input must be a file");
     let file_module = syn::parse_str::<Ident>(name)?;
 
     let raw_contents = fs::read_to_string(client_file)?;
