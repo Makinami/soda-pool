@@ -18,7 +18,7 @@
 //!
 //! ```no_run
 //! # use std::error::Error;
-//! use soda_pool::{ChannelPoolBuilder, EndpointTemplate};
+//! use soda_pool::{ChannelPool, EndpointTemplate, ManagedChannelPoolBuilder};
 //! use tonic::transport::Channel;
 //! use url::Url;
 //!
@@ -26,7 +26,7 @@
 //! async fn main() -> Result<(), Box<dyn Error>> {
 //!     let url = Url::parse("http://grpc.example.com:50051")?;
 //!     let endpoint_template = EndpointTemplate::new(url)?;
-//!     let pool = ChannelPoolBuilder::new(endpoint_template).build();
+//!     let pool = ManagedChannelPoolBuilder::new(endpoint_template).build();
 //!
 //!     // Get a channel from the pool
 //!     let Some((ip_address, channel)) = pool.get_channel().await else {
