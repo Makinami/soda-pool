@@ -21,6 +21,7 @@ pub(crate) struct GrpcClientImpl {
 #[derive(Debug, PartialEq)]
 pub(crate) struct GrpcClientMethod {
     pub(crate) name: Ident,
+    pub(crate) deprecated: bool,
     pub(crate) request_type: Type,
     pub(crate) response_type: Type,
 }

@@ -170,8 +170,15 @@ fn parse_grpc_method(method: &ImplItemFn) -> BuilderResult<GrpcClientMethod> {
     let response_success_type = get_result_success_type(&method.sig.output)?;
     let response_type = get_tonic_response_type(response_success_type)?.to_owned();
 
+    let deprecated = method.attrs.iter().any(|attr| {
+        attr.path()
+            .get_ident()
+            .is_some_and(|ident| ident == "deprecated")
+    });
+
     Ok(GrpcClientMethod {
         name: method.sig.ident.clone(),
+        deprecated,
         request_type,
         response_type,
     })
@@ -271,6 +278,7 @@ mod tests {
                     name: Ident::new("HealthClient", Span::call_site()),
                     methods: vec![GrpcClientMethod {
                         name: Ident::new("is_alive", Span::call_site()),
+                        deprecated: true,
                         request_type: syn::parse_str("()").unwrap(),
                         response_type: syn::parse_str("super::IsAliveResponse").unwrap(),
                     }],
@@ -282,6 +290,7 @@ mod tests {
                     name: Ident::new("EchoClient", Span::call_site()),
                     methods: vec![GrpcClientMethod {
                         name: Ident::new("echo_message", Span::call_site()),
+                        deprecated: false,
                         request_type: syn::parse_str("super::EchoRequest").unwrap(),
                         response_type: syn::parse_str("super::EchoResponse").unwrap(),
                     }],

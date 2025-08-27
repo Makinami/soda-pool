@@ -83,15 +83,23 @@ impl GrpcClientMethod {
             Ident::new(&format!("{method_name}_with_retry"), method_name.span());
         let request_param = &self.request_type;
         let response_type = &self.response_type;
+        let attributes = if self.deprecated {
+            quote! { #[deprecated] }
+        } else {
+            quote! {}
+        };
 
         quote! {
+            #attributes
             pub async fn #method_name(
                 &self,
                 request: impl tonic::IntoRequest<#request_param>,
             ) -> std::result::Result<tonic::Response<#response_type>, tonic::Status> {
+                #[allow(deprecated)]
                 self.#method_name_with_retry::<soda_pool::DefaultRetryPolicy>(request).await
             }
 
+            #attributes
             pub async fn #method_name_with_retry<RP: soda_pool::RetryPolicy>(
                 &self,
                 request: impl tonic::IntoRequest<#request_param>,
@@ -110,6 +118,7 @@ impl GrpcClientMethod {
                         extensions.clone(),
                         message.clone(),
                     );
+                    #[allow(deprecated)]
                     let result = #original_client_name::new(channel).#method_name(request).await;
 
                     match result {
@@ -163,6 +172,7 @@ mod tests {
                         name: Ident::new("HealthClient", Span::call_site()),
                         methods: vec![GrpcClientMethod {
                             name: Ident::new("is_alive", Span::call_site()),
+                            deprecated: true,
                             request_type: syn::parse_str("()").unwrap(),
                             response_type: syn::parse_str("super::IsAliveResponse").unwrap(),
                         }],
@@ -174,6 +184,7 @@ mod tests {
                         name: Ident::new("EchoClient", Span::call_site()),
                         methods: vec![GrpcClientMethod {
                             name: Ident::new("echo_message", Span::call_site()),
+                            deprecated: false,
                             request_type: syn::parse_str("super::EchoRequest").unwrap(),
                             response_type: syn::parse_str("super::EchoResponse").unwrap(),
                         }],

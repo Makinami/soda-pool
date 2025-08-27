@@ -53,6 +53,7 @@ pub fn grpc_client(c: &mut Criterion) {
                     let mut client = HealthClient::connect(endpoint.clone())
                         .await
                         .map_err(|_| Status::unknown(""))?;
+                    #[allow(deprecated)]
                     client.is_alive(().into_request()).await
                 }))
                 .await;

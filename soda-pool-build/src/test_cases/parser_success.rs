@@ -98,6 +98,7 @@ pub mod health_client {
         pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
             unreachable!()
         }
+        #[deprecated]
         pub async fn is_alive(
             &mut self,
             request: impl tonic::IntoRequest<()>,

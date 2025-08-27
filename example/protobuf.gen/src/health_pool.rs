@@ -22,6 +22,7 @@ pub mod health_client {
         }
     }
     impl HealthClientPool {
+        #[deprecated]
         pub async fn is_alive(
             &self,
             request: impl tonic::IntoRequest<()>,
@@ -29,8 +30,10 @@ pub mod health_client {
             tonic::Response<super::IsAliveResponse>,
             tonic::Status,
         > {
+            #[allow(deprecated)]
             self.is_alive_with_retry::<soda_pool::DefaultRetryPolicy>(request).await
         }
+        #[deprecated]
         pub async fn is_alive_with_retry<RP: soda_pool::RetryPolicy>(
             &self,
             request: impl tonic::IntoRequest<()>,
@@ -52,6 +55,7 @@ pub mod health_client {
                     extensions.clone(),
                     message.clone(),
                 );
+                #[allow(deprecated)]
                 let result = HealthClient::new(channel).is_alive(request).await;
                 match result {
                     Ok(response) => {
@@ -104,6 +108,7 @@ pub mod echo_client {
             &self,
             request: impl tonic::IntoRequest<super::EchoRequest>,
         ) -> std::result::Result<tonic::Response<super::EchoResponse>, tonic::Status> {
+            #[allow(deprecated)]
             self.echo_message_with_retry::<soda_pool::DefaultRetryPolicy>(request).await
         }
         pub async fn echo_message_with_retry<RP: soda_pool::RetryPolicy>(
@@ -124,6 +129,7 @@ pub mod echo_client {
                     extensions.clone(),
                     message.clone(),
                 );
+                #[allow(deprecated)]
                 let result = EchoClient::new(channel).echo_message(request).await;
                 match result {
                     Ok(response) => {

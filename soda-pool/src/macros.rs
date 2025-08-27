@@ -73,6 +73,7 @@ macro_rules! define_method {
                         extensions.clone(),
                         message.clone(),
                     );
+                    #[allow(deprecated)]
                     let result = $client::new(channel).$name(request).await;
 
                     match result {

@@ -105,6 +105,7 @@ pub mod health_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
+        #[deprecated]
         pub async fn is_alive(
             &mut self,
             request: impl tonic::IntoRequest<()>,

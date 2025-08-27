@@ -3,7 +3,9 @@ package health;
 import "google/protobuf/empty.proto";
 
 service Health {
-  rpc IsAlive(google.protobuf.Empty) returns (IsAliveResponse);
+  rpc IsAlive(google.protobuf.Empty) returns (IsAliveResponse) {
+    option deprecated = true;
+  }
 }
 
 service Echo {

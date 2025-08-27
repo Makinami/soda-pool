@@ -34,6 +34,7 @@ async fn main() {
             let mut interval = interval(Duration::from_millis(100));
             loop {
                 interval.tick().await;
+                #[allow(deprecated)]
                 let response = client.is_alive_with_retry::<AlwaysRetry>(()).await;
                 match response {
                     Ok(r) => info!("Request successful: {:?}", r.into_inner().message),
