@@ -1,6 +1,4 @@
-use std::net::IpAddr;
-
-use rand::Rng;
+use std::{net::IpAddr, sync::atomic::{AtomicUsize, Ordering}};
 
 use tokio::sync::RwLock;
 use tonic::transport::Channel;
@@ -8,6 +6,7 @@ use tonic::transport::Channel;
 #[derive(Debug, Default)]
 pub(crate) struct ReadyChannels {
     channels: RwLock<Vec<(IpAddr, Channel)>>,
+    index: AtomicUsize,
 }
 
 impl ReadyChannels {
@@ -30,9 +29,8 @@ impl ReadyChannels {
         if read_access.is_empty() {
             return None;
         }
-        // If we keep track of what channels are currently being used, we could better load balance them.
-        let index = rand::rng().random_range(0..read_access.len());
-        Some(read_access[index].clone())
+        let index = self.index.fetch_add(1, Ordering::Relaxed);
+        Some(read_access[index % read_access.len()].clone())
     }
 
     pub(crate) async fn add(&self, ip: IpAddr, channel: Channel) {
