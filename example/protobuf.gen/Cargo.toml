@@ -7,5 +7,6 @@ publish = false
 [dependencies]
 prost = { workspace = true }
 tonic = { workspace = true }
+tonic-prost = { workspace = true }
 
 soda-pool = { path = "../../soda-pool" }

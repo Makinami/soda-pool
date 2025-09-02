@@ -27,6 +27,8 @@ pub struct EndpointTemplate {
     init_stream_window_size: Option<u32>,
     init_connection_window_size: Option<u32>,
     tcp_keepalive: Option<Duration>,
+    tcp_keepalive_interval: Option<Duration>,
+    tcp_keepalive_retries: Option<u32>,
     tcp_nodelay: Option<bool>,
     http2_keep_alive_interval: Option<Duration>,
     http2_keep_alive_timeout: Option<Duration>,
@@ -91,6 +93,8 @@ impl EndpointTemplate {
             init_stream_window_size: None,
             init_connection_window_size: None,
             tcp_keepalive: None,
+            tcp_keepalive_interval: None,
+            tcp_keepalive_retries: None,
             tcp_nodelay: None,
             http2_keep_alive_interval: None,
             http2_keep_alive_timeout: None,
@@ -136,7 +140,10 @@ impl EndpointTemplate {
             endpoint = endpoint.connect_timeout(connect_timeout);
         }
 
-        endpoint = endpoint.tcp_keepalive(self.tcp_keepalive);
+        endpoint = endpoint
+            .tcp_keepalive(self.tcp_keepalive)
+            .tcp_keepalive_interval(self.tcp_keepalive_interval)
+            .tcp_keepalive_retries(self.tcp_keepalive_retries);
 
         if let Some(limit) = self.concurrency_limit {
             endpoint = endpoint.concurrency_limit(limit);
@@ -254,6 +261,24 @@ impl EndpointTemplate {
     pub fn tcp_keepalive(self, tcp_keepalive: Option<Duration>) -> Self {
         Self {
             tcp_keepalive,
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::tcp_keepalive_interval`].
+    #[must_use]
+    pub fn tcp_keepalive_interval(self, interval: Duration) -> Self {
+        Self {
+            tcp_keepalive_interval: Some(interval),
+            ..self
+        }
+    }
+
+    /// r.f. [`Endpoint::tcp_keepalive_retries`].
+    #[must_use]
+    pub fn tcp_keepalive_retries(self, retries: u32) -> Self {
+        Self {
+            tcp_keepalive_retries: Some(retries),
             ..self
         }
     }

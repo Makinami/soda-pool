@@ -1,4 +1,7 @@
-use std::{net::IpAddr, sync::atomic::{AtomicUsize, Ordering}};
+use std::{
+    net::IpAddr,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use tokio::sync::RwLock;
 use tonic::transport::Channel;

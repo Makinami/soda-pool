@@ -9,12 +9,12 @@ fn main() {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let mut config = prost_build::Config::new();
+    let mut config = tonic_prost_build::Config::new();
     config.protoc_arg("--experimental_allow_proto3_optional");
 
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .out_dir("./example/protobuf.gen/src")
-        .compile_protos_with_config(config, &["./example/proto/example.proto"], &["./proto"])
+        .compile_with_config(config, &["./example/proto/example.proto"], &["./proto"])
         .expect("failed to compile proto file");
 
     soda_pool_build::configure()
