@@ -338,7 +338,7 @@ impl EndpointTemplate {
     #[cfg(feature = "tls")]
     pub fn tls_config(self, tls_config: ClientTlsConfig) -> Result<Self, EndpointTemplateError> {
         // Make sure we'll be able to build the Endpoint using this ClientTlsConfig
-        let endpoint = self.build(std::net::Ipv4Addr::new(127, 0, 0, 1));
+        let endpoint = self.build(std::net::Ipv4Addr::LOCALHOST);
         let _ = endpoint
             .tls_config(tls_config.clone())
             .map_err(|_| EndpointTemplateError::InvalidTlsConfig)?;
