@@ -309,6 +309,14 @@ impl ChannelPool for ManagedChannelPool {
     }
 }
 
+impl ManagedChannelPool {
+    /// Returns a reference to the endpoint template used by the pool.
+    #[must_use]
+    pub fn endpoint(&self) -> &EndpointTemplate {
+        &self.template
+    }
+}
+
 /// This is a shallow clone, meaning that the new pool will reference the same
 /// resources as the original pool.
 impl Clone for ManagedChannelPool {
